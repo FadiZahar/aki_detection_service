@@ -118,7 +118,7 @@ def preload_history(pathname='history.csv'): # Kyoya
 
 
 
-def extract_type_and_id(message): 
+def extract_type_and_mrn(message): 
     """
     Extract the message type and MRN (patient ID) from the HL7 message
     Message type can be: 'admission', 'discharge', 'creatinine_result'
