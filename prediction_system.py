@@ -63,29 +63,44 @@ def extract_type_id():
 
 # Threads
 def processor():
+    i = 0
+    while i < 10:
+        i += 1
+        print("Hiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii")
+        time.sleep(1)
     pass
 
 def message_reciever():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.connect(("localhost", 8440))
-        while True:
-            buffer = s.recv(1024)
-            if len(buffer) == 0:
-                break
-            message = from_mllp(buffer)
-            messages.append(message)
-            ack = to_mllp(ACK)
-            s.sendall(ack)
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            print("Attempting to connect...")
+            s.connect(("localhost", 8440))
+            print("Connected!")
+            while True:
+                buffer = s.recv(1024)
+                if len(buffer) == 0:
+                    break
+                message = from_mllp(buffer)
+                messages.append(message)
+                ack = to_mllp(ACK)
+                s.sendall(ack)
+                print("Message received and ACK sent.")
+                time.sleep(2)
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 def main():
     pass
     # start all threads
-    t1 = threading.Thread(target=message_reciever, args=("0.0.0.0", flags.mllp, hl7_messages, shutdown_mllp), daemon=True)
+    #TODO: load history
+
+    t1 = threading.Thread(target=message_reciever, daemon=True)
     t1.start()
-    t1 = threading.Thread(target=message_reciever, args=("0.0.0.0", flags.mllp, hl7_messages, shutdown_mllp), daemon=True)
-    t1.start()
-    t1 = threading.Thread(target=message_reciever, args=("0.0.0.0", flags.mllp, hl7_messages, shutdown_mllp), daemon=True)
-    t1.start()
+    t2 = threading.Thread(target=processor, daemon=True)
+    t2.start()
+
+    t1.join()
+    t2.join()
 
 
 
