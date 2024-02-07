@@ -120,7 +120,7 @@ def preload_history(pathname='history.csv'): # Kyoya
     return df
 
 
-def extract_features(message, df):
+def extract_features(message, df, model):
     """
     Extract the features from the HL7 message and local database (pandas dataframe)
 
@@ -138,7 +138,10 @@ def extract_features(message, df):
             df.at[mrn, 'test_2'] = df.at[mrn, 'test_1']
             df.at[mrn, 'test_1'] = creatinine_result
             features = df.loc[mrn]
-            return mrn
+            aki = model.predict(features)
+            if aki:
+                return mrn
+            return None
 
     elif message[0].split("|")[8] == "ADT^A01":
         mrn = message[1].split("|")[3]
@@ -216,7 +219,7 @@ def processor():
                     # send features to make a prediction (feeding pretrained model)
                     # if prediction is positive, send a page to the hospital
             # send acknoladgement
-            
+
             
             
             # Final part: send paging and acknoladgement (INCLUDE IF STATEMENT TO SEND MRN ONLY IF MESSAGE IS PASSED)
