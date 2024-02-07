@@ -185,7 +185,7 @@ def calculate_age(dob):
 
 
 # Threads
-def processor(message, df, model):
+def processor(df, model):
     """
     Process messages and depending on the message type, update the database or make a prediction
     If the message is a admission, update the database
