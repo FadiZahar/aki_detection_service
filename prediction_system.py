@@ -128,7 +128,21 @@ def extract_type_and_mrn(message):
     input: message (list of strings)
     output: type (string), id (string)
     """
-    pass
+    message_type = None
+    mrn = None
+    
+    for segment in message:
+        parts = segment.split("|")
+        if parts[0] == "MSH":
+            message_type = parts[8]  # Extract the message type
+        elif parts[0] == "PID":
+            mrn = parts[3]  # Extract the patient ID (MRN)
+        
+        # Once both needed values are found, no need to continue looping
+        if message_type and mrn:
+            break
+
+    return (message_type, mrn)
 
 
 
@@ -144,7 +158,7 @@ def create_record(id, message):
     pass
 
 
-def extract_features():
+def extract_features(message):
     """
     Extract the features from the HL7 message and local database (pandas dataframe)
     
@@ -208,8 +222,6 @@ def processor():
             finally:
                 # Ensure the lock is always released
                 lock.release()
-
-
 
 def message_reciever():
     # Point to global
