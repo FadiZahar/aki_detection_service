@@ -12,7 +12,6 @@ import http.server
 import pandas as pd
 import csv
 import statistics
-from datetime import datetime
 
 ACK = [
     "MSH|^~\&|||||20240129093837||ACK|||2.5",
@@ -159,55 +158,15 @@ def create_record(id, message):
     pass
 
 
-def extract_features(message, df):
+def extract_features(message):
     """
     Extract the features from the HL7 message and local database (pandas dataframe)
     
     inputs: MRN, HL7 message (list of strings)
     outputs: features (list)
     """
-    message_type, mrn = extract_type_and_mrn(message)
-    if message_type == "ORU^R01":
-        for segment in message:
-            parts = segment.split("|")
-            if parts[0] == "OBX":
-                if parts[3] == "CREATININE":
-                    creatinine_result = parts[5]
-                    df.at[mrn, 'test_5'] = df.at[mrn, 'test_4']
-                    df.at[mrn, 'test_4'] = df.at[mrn, 'test_3']
-                    df.at[mrn, 'test_3'] = df.at[mrn, 'test_2']
-                    df.at[mrn, 'test_2'] = df.at[mrn, 'test_1']
-                    df.at[mrn, 'test_1'] = creatinine_result
-                    features = df.loc[mrn]
-                    return features
+    pass
 
-    elif message_type == "ADT^A01":
-        for segment in message:
-            parts = segment.split("|")
-            if parts[0] == "PID":
-                dob = parts[7]
-                age = calculate_age(dob)
-                df.loc[mrn, 'Age'] = age
-                sex = parts[8]
-                df.loc[mrn, 'Sex'] = sex
-                return None
-
-
-def calculate_age(dob):
-    # Define the format of the date of birth
-    dob_format = "%Y%m%d"
-
-    # Convert DOB from string to datetime object
-    dob_datetime = datetime.strptime(dob, dob_format)
-
-    # Get the current datetime
-    current_datetime = datetime.now()
-
-    # Calculate age
-    age = current_datetime.year - dob_datetime.year - (
-            (current_datetime.month, current_datetime.day) < (dob_datetime.month, dob_datetime.day))
-
-    return age
 
 
 # Threads
@@ -222,6 +181,7 @@ def processor():
     input: message (list of strings)
     output: None
     """
+    
     # Point to global variables
     global messages, send_ack
     # Initialize flag to run code
@@ -244,8 +204,21 @@ def processor():
             print("From processor:", message)
             print("")
             # TODO: add processor and prediction
-
-            # Final part: send paging and acknoladgement
+            
+            
+            # extract message type and MRN
+            # based on the message type, 
+                # if PAS, retrieve age and sex and update the database
+                # if LIMS, 
+                    # extract the creatinine result 
+                    # update database
+                    # send features to make a prediction (feeding pretrained model)
+                    # if prediction is positive, send a page to the hospital
+            # send acknoladgement
+            
+            
+            
+            # Final part: send paging and acknoladgement (INCLUDE IF STATEMENT TO SEND MRN ONLY IF MESSAGE IS PASSED)
             # First, send the paging
             mrn = b"1234" # Change with actual mrn
             r = urllib.request.urlopen(f"http://localhost:8441/page", data=mrn)
