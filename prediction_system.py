@@ -146,7 +146,7 @@ def examine_message(message, df, model):
             creatinine_result = float(message[3].split("|")[5])
 
             # Initialise test results for new MRN or update existing MRN test results
-            if mrn not in df.index:
+            if df.loc[mrn, ['test_1', 'test_2', 'test_3', 'test_4', 'test_5']].isnull().any():
                 # Assuming 'age' and 'sex' are already set through another process,
                 # only initialise the test results if MRN is completely new.
                 df.loc[mrn, ['test_1', 'test_2', 'test_3', 'test_4', 'test_5']] = [creatinine_result] * 5
