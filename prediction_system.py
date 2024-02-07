@@ -144,10 +144,18 @@ def examine_message(message, df, model):
         if message[3].split("|")[3] == "CREATININE":
             mrn = message[1].split("|")[3]
             creatinine_result = float(message[3].split("|")[5])
-            # Efficiently shift and insert the new creatinine result
-            # Shift existing results and insert the new result at 'test_1'
-            df.loc[mrn, 'test_5':'test_2'] = df.loc[mrn, 'test_4':'test_1'].values
-            df.at[mrn, 'test_1'] = creatinine_result
+
+            # Initialise test results for new MRN or update existing MRN test results
+            if mrn not in df.index:
+                # Assuming 'age' and 'sex' are already set through another process,
+                # only initialise the test results if MRN is completely new.
+                df.loc[mrn, ['test_1', 'test_2', 'test_3', 'test_4', 'test_5']] = [creatinine_result] * 5
+            else:
+                # Efficiently shift existing test results and insert the new creatinine result at 'test_1'
+                # for an existing MRN.
+                df.loc[mrn, 'test_5':'test_2'] = df.loc[mrn, 'test_4':'test_1'].values
+                df.at[mrn, 'test_1'] = creatinine_result
+
             # Predict and handle AKI
             features = df.loc[mrn]
             aki = model.predict(features)
