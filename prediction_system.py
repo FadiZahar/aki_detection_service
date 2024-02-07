@@ -44,7 +44,7 @@ def to_mllp(segments):
     return m
 
 
-def preload_history(pathname='history.csv'): # Kyoya
+def preload_history(pathname='data/history.csv'): # Kyoya
     """
     Load the history of the all patients in a pandas dataframe.
     Index: MRN (patient id)
@@ -158,6 +158,9 @@ def examine_message(message, df, model):
 
             # Predict and handle AKI
             features = df.loc[mrn]
+            features = features.to_numpy().reshape(1, -1)
+            #print(features)
+            #print(features[0, 0])
             aki = model.predict(features)
             if aki:
                 return mrn
@@ -234,8 +237,8 @@ def processor(model, df):
         if run_code == True:
             # Add all the processor bit here
             # For now, I am testing we receive the messages well with a print
-            print("From processor:", message)
-            print("")
+            #print("From processor:", message)
+            #print("")
             # TODO: add processor and prediction
 
             mrn = examine_message(message, df, model)
@@ -243,10 +246,10 @@ def processor(model, df):
             # Final part: send paging and acknoladgement (INCLUDE IF STATEMENT TO SEND MRN ONLY IF MESSAGE IS PASSED)
             # First, send the paging
             if mrn:
-                r = urllib.request.urlopen(f"http://localhost:8441/page", data=mrn)
+                r = urllib.request.urlopen(f"http://localhost:8441/page", data=mrn.encode('utf-8'))
                 #this prints are for reference, do not care about them
-                print("status: ", r.status)
-                print("http status: ", http.HTTPStatus.OK)
+                #print("status: ", r.status)
+                #print("http status: ", http.HTTPStatus.OK)
 
             # Send the acknolagment
             # Acquire the lock before accessing shared variables
@@ -274,7 +277,7 @@ def message_reciever():
                 if len(buffer) == 0:
                     break
                 message = from_mllp(buffer)
-                print("From message reciever:", message)
+                #print("From message reciever:", message)
                 # Add message to messages pipeline
                 # Acquire the lock before accessing shared variables
                 lock.acquire()
@@ -301,7 +304,7 @@ def message_reciever():
 
                 ack = to_mllp(ACK)
                 s.sendall(ack)
-                print("Message received and ACK sent.")
+                #print("Message received and ACK sent.")
                 #time.sleep(0.1)
     except Exception as e:
         print(f"An error occurred: {e}")
