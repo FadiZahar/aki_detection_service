@@ -156,7 +156,7 @@ def create_record(id, message):
     pass
 
 
-def extract_features():
+def extract_features(message):
     """
     Extract the features from the HL7 message and local database (pandas dataframe)
     
@@ -180,7 +180,17 @@ def processor():
     output: None
     """
     
-    
+    message = messages.pop()
+    message_type, mrn = extract_type_and_mrn(message)
+    if message_type == "ADT^A01":
+        pass # create or update patient record
+    elif message_type == "ADT^A03":
+        pass # Do nothing
+    elif message_type == "ORU^R01":
+        pass # extract features, make prediction, notify hospital, update database
+    else:
+        print("Unknown message type")
+        return
     
     # Note: This is just to try the threads
     i = 0
