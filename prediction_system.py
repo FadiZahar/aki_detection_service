@@ -188,6 +188,7 @@ def processor():
             # For now, I am testing we receive the messages well with a print
             print("From processor:", message)
             print("")
+            # TODO: add processor and prediction
 
             # Final part: send paging and acknoladgement
             # First, send the paging
