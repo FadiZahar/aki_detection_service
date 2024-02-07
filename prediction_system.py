@@ -12,6 +12,7 @@ import http.server
 import pandas as pd
 import csv
 import statistics
+from datetime import datetime
 
 ACK = [
     "MSH|^~\&|||||20240129093837||ACK|||2.5",
@@ -119,53 +120,53 @@ def preload_history(pathname='history.csv'): # Kyoya
     return df
 
 
-
-def extract_type_and_mrn(message): 
-    """
-    Extract the message type and MRN (patient ID) from the HL7 message
-    Message type can be: 'admission', 'discharge', 'creatinine_result'
-    
-    input: message (list of strings)
-    output: type (string), id (string)
-    """
-    message_type = None
-    mrn = None
-    
-    for segment in message:
-        parts = segment.split("|")
-        if parts[0] == "MSH":
-            message_type = parts[8]  # Extract the message type
-        elif parts[0] == "PID":
-            mrn = parts[3]  # Extract the patient ID (MRN)
-        
-        # Once both needed values are found, no need to continue looping
-        if message_type and mrn:
-            break
-
-    return (message_type, mrn)
-
-
-
-def create_record(id, message):
-    """
-    Create a new record for the new patient in the database
-    Index: MRN (patient id)
-    Cols: age, sex (creatinine cols will be filled with NaN)
-    
-    inputs: MRN, HL7 message (list of strings)
-    outputs: None
-    """
-    pass
-
-
-def extract_features(message):
+def extract_features(message, df):
     """
     Extract the features from the HL7 message and local database (pandas dataframe)
-    
+
     inputs: MRN, HL7 message (list of strings)
     outputs: features (list)
     """
-    pass
+    # If LIMS message:
+    if message[0].split("|")[8] == "ORU^R01":
+        if message[3].split("|")[3] == "CREATININE":
+            mrn = message[1].split("|")[3]
+            creatinine_result = message[3].split("|")[5]
+            df.at[mrn, 'test_5'] = df.at[mrn, 'test_4']
+            df.at[mrn, 'test_4'] = df.at[mrn, 'test_3']
+            df.at[mrn, 'test_3'] = df.at[mrn, 'test_2']
+            df.at[mrn, 'test_2'] = df.at[mrn, 'test_1']
+            df.at[mrn, 'test_1'] = creatinine_result
+            features = df.loc[mrn]
+            return mrn
+
+    elif message[0].split("|")[8] == "ADT^A01":
+        mrn = message[1].split("|")[3]
+        # Extract age and update dataframe
+        dob = message[1].split("|")[7]
+        age = calculate_age(dob)
+        df.loc[mrn, 'age'] = age
+        # Extract sex and update dataframe
+        sex = message[1].split("|")[8]
+        df.loc[mrn, 'sex'] = age
+        return None
+
+
+def calculate_age(dob):
+    # Define the format of the date of birth
+    dob_format = "%Y%m%d"
+
+    # Convert DOB from string to datetime object
+    dob_datetime = datetime.strptime(dob, dob_format)
+
+    # Get the current datetime
+    current_datetime = datetime.now()
+
+    # Calculate age
+    age = current_datetime.year - dob_datetime.year - (
+            (current_datetime.month, current_datetime.day) < (dob_datetime.month, dob_datetime.day))
+
+    return age
 
 
 
