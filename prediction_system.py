@@ -23,10 +23,12 @@ MLLP_END_OF_BLOCK = 0x1c
 MLLP_CARRIAGE_RETURN = 0x0d
 
 # Global variables
-messages = []
+global messages, send_ack
 results = []
 dict = {}
 model = None
+lock = threading.Lock()
+
 
 # Miscelaneous
 def from_mllp(buffer):
@@ -165,29 +167,92 @@ def processor():
     input: message (list of strings)
     output: None
     """
-    # Note: This is just to try the threads
-    i = 0
-    while i < 10:
-        i += 1
-        print("Hiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii")
-        time.sleep(1)
+    # Point to global variables
+    global messages, send_ack
+    # Initialize flag to run code
+    run_code = False
+    message = None
+    while True:
+       # Send the acknolagment
+        # Acquire the lock before accessing shared variables
+        lock.acquire()
+        try:
+            if len(messages) > 0:
+                message = messages.pop(0)
+                run_code = True
+        finally:
+            # Ensure the lock is always released
+            lock.release()
+        if run_code == True:
+            # Add all the processor bit here
+            # For now, I am testing we receive the messages well with a print
+            print("From processor:", message)
+            print("")
+
+            # Final part: send paging and acknoladgement
+            # First, send the paging
+            mrn = b"1234" # Change with actual mrn
+            r = urllib.request.urlopen(f"http://localhost:8441/page", data=mrn)
+            #this prints are for reference, do not care about them
+            print("status: ", r.status)
+            print("http status: ", http.HTTPStatus.OK)
+
+            # Send the acknolagment
+            # Acquire the lock before accessing shared variables
+            lock.acquire()
+            try:
+                # Critical section of code
+                # Modify shared variables
+                send_ack = True
+            finally:
+                # Ensure the lock is always released
+                lock.release()
+
+
 
 def message_reciever():
+    # Point to global
+    global message, send_ack
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             print("Attempting to connect...")
             s.connect(("localhost", 8440))
             print("Connected!")
             while True:
+                # Read the buffer
                 buffer = s.recv(1024)
                 if len(buffer) == 0:
                     break
                 message = from_mllp(buffer)
-                messages.append(message)
+                print("From message reciever:", message)
+                # Add message to messages pipeline
+                # Acquire the lock before accessing shared variables
+                lock.acquire()
+                try:
+                    # Critical section of code
+                    # Modify shared variables
+                    messages.append(message)
+                finally:
+                    # Ensure the lock is always released
+                    lock.release()
+                
+                # Wait for proccess to send the acknowledgement
+                wait_flag = True
+                while wait_flag:
+                    # Acquire the lock before accessing shared variables
+                    lock.acquire()
+                    try:
+                        if send_ack:
+                            wait_flag = False
+                            send_ack = False
+                    finally:
+                        # Ensure the lock is always released
+                        lock.release()
+
                 ack = to_mllp(ACK)
                 s.sendall(ack)
                 print("Message received and ACK sent.")
-                time.sleep(2)
+                time.sleep(1)
     except Exception as e:
         print(f"An error occurred: {e}")
 
@@ -195,6 +260,11 @@ def main():
     pass
     # start all threads
     #TODO: load history
+    
+    # Start global variables
+    global messages, send_ack
+    messages = []
+    send_ack = False
 
     t1 = threading.Thread(target=message_reciever, daemon=True)
     t1.start()
