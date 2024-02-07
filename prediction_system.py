@@ -126,7 +126,21 @@ def extract_type_and_mrn(message):
     input: message (list of strings)
     output: type (string), id (string)
     """
-    pass
+    message_type = None
+    mrn = None
+    
+    for segment in message:
+        parts = segment.split("|")
+        if parts[0] == "MSH":
+            message_type = parts[8]  # Extract the message type
+        elif parts[0] == "PID":
+            mrn = parts[3]  # Extract the patient ID (MRN)
+        
+        # Once both needed values are found, no need to continue looping
+        if message_type and mrn:
+            break
+
+    return (message_type, mrn)
 
 
 
@@ -165,6 +179,9 @@ def processor():
     input: message (list of strings)
     output: None
     """
+    
+    
+    
     # Note: This is just to try the threads
     i = 0
     while i < 10:
