@@ -36,6 +36,7 @@ lock = threading.Lock()
 def from_mllp(buffer):
     return str(buffer[1:-3], "ascii").split("\r") # Strip MLLP framing and final \r
 
+
 def to_mllp(segments):
     m = bytes(chr(MLLP_START_OF_BLOCK), "ascii")
     m += bytes("\r".join(segments) + "\r", "ascii")
@@ -140,6 +141,7 @@ def examine_message(message, df, model):
     """
     # If LIMS message:
     if message[0].split("|")[8] == "ORU^R01":
+        print("LIMS")
         if message[3].split("|")[3] == "CREATININE":
             mrn = message[1].split("|")[3]
             creatinine_result = message[3].split("|")[5]
@@ -155,6 +157,7 @@ def examine_message(message, df, model):
             return None
 
     elif message[0].split("|")[8] == "ADT^A01":
+        print("PAS")
         mrn = message[1].split("|")[3]
         # Extract age and update dataframe
         dob = message[1].split("|")[7]
@@ -182,10 +185,8 @@ def calculate_age(dob):
 
     return age
 
-
-
 # Threads
-def processor(df, model):
+def processor(model, df):
     """
     Process messages and depending on the message type, update the database or make a prediction
     If the message is a admission, update the database
@@ -241,6 +242,7 @@ def processor(df, model):
                 # Ensure the lock is always released
                 lock.release()
 
+
 def message_reciever():
     # Point to global
     global message, send_ack
@@ -286,6 +288,7 @@ def message_reciever():
                 #time.sleep(0.1)
     except Exception as e:
         print(f"An error occurred: {e}")
+
 
 def main():
     # Load history.csv
