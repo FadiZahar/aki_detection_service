@@ -13,6 +13,7 @@ import pandas as pd
 import csv
 import statistics
 from datetime import datetime
+import pickle
 
 ACK = [
     "MSH|^~\&|||||20240129093837||ACK|||2.5",
@@ -120,12 +121,22 @@ def preload_history(pathname='history.csv'): # Kyoya
     return df
 
 
-def extract_features(message, df, model):
+def examine_message(message, df, model):
     """
     Extract the features from the HL7 message and local database (pandas dataframe)
 
     inputs: MRN, HL7 message (list of strings)
     outputs: features (list)
+    
+    # extract message type and MRN
+            # based on the message type, 
+                # if PAS, retrieve age and sex and update the database
+                # if LIMS, 
+                    # extract the creatinine result 
+                    # update database
+                    # send features to make a prediction (feeding pretrained model)
+                    # if prediction is positive, send a page to the hospital
+            # send acknoladgement
     """
     # If LIMS message:
     if message[0].split("|")[8] == "ORU^R01":
@@ -174,7 +185,7 @@ def calculate_age(dob):
 
 
 # Threads
-def processor():
+def processor(message, df, model):
     """
     Process messages and depending on the message type, update the database or make a prediction
     If the message is a admission, update the database
@@ -208,27 +219,16 @@ def processor():
             print("From processor:", message)
             print("")
             # TODO: add processor and prediction
-            
-            
-            # extract message type and MRN
-            # based on the message type, 
-                # if PAS, retrieve age and sex and update the database
-                # if LIMS, 
-                    # extract the creatinine result 
-                    # update database
-                    # send features to make a prediction (feeding pretrained model)
-                    # if prediction is positive, send a page to the hospital
-            # send acknoladgement
 
-            
+            mrn = examine_message(message, df, model)
             
             # Final part: send paging and acknoladgement (INCLUDE IF STATEMENT TO SEND MRN ONLY IF MESSAGE IS PASSED)
             # First, send the paging
-            mrn = b"1234" # Change with actual mrn
-            r = urllib.request.urlopen(f"http://localhost:8441/page", data=mrn)
-            #this prints are for reference, do not care about them
-            print("status: ", r.status)
-            print("http status: ", http.HTTPStatus.OK)
+            if mrn:
+                r = urllib.request.urlopen(f"http://localhost:8441/page", data=mrn)
+                #this prints are for reference, do not care about them
+                print("status: ", r.status)
+                print("http status: ", http.HTTPStatus.OK)
 
             # Send the acknolagment
             # Acquire the lock before accessing shared variables
@@ -283,23 +283,29 @@ def message_reciever():
                 ack = to_mllp(ACK)
                 s.sendall(ack)
                 print("Message received and ACK sent.")
-                time.sleep(1)
+                #time.sleep(0.1)
     except Exception as e:
         print(f"An error occurred: {e}")
 
 def main():
-    pass
-    # start all threads
-    #TODO: load history
+    # Load history.csv
+    database = preload_history()
+    
+    # Load the trained model
+    with open("trained_model.pkl", "rb") as file:
+        model = pickle.load(file)
+
+    # use processor functions
     
     # Start global variables
     global messages, send_ack
     messages = []
     send_ack = False
 
+    # start all threads
     t1 = threading.Thread(target=message_reciever, daemon=True)
     t1.start()
-    t2 = threading.Thread(target=processor, daemon=True)
+    t2 = threading.Thread(target=processor(model, database), daemon=True)
     t2.start()
 
     t1.join()
@@ -309,5 +315,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    dataframe = preload_history()
-    print(dataframe.head())
