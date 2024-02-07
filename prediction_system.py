@@ -128,12 +128,12 @@ def examine_message(message, df, model):
 
     inputs: MRN, HL7 message (list of strings)
     outputs: features (list)
-    
+
     # extract message type and MRN
-            # based on the message type, 
+            # based on the message type,
                 # if PAS, retrieve age and sex and update the database
-                # if LIMS, 
-                    # extract the creatinine result 
+                # if LIMS,
+                    # extract the creatinine result
                     # update database
                     # send features to make a prediction (feeding pretrained model)
                     # if prediction is positive, send a page to the hospital
@@ -141,15 +141,14 @@ def examine_message(message, df, model):
     """
     # If LIMS message:
     if message[0].split("|")[8] == "ORU^R01":
-        print("LIMS")
         if message[3].split("|")[3] == "CREATININE":
             mrn = message[1].split("|")[3]
-            creatinine_result = message[3].split("|")[5]
-            df.at[mrn, 'test_5'] = df.at[mrn, 'test_4']
-            df.at[mrn, 'test_4'] = df.at[mrn, 'test_3']
-            df.at[mrn, 'test_3'] = df.at[mrn, 'test_2']
-            df.at[mrn, 'test_2'] = df.at[mrn, 'test_1']
+            creatinine_result = float(message[3].split("|")[5])
+            # Efficiently shift and insert the new creatinine result
+            # Shift existing results and insert the new result at 'test_1'
+            df.loc[mrn, 'test_5':'test_2'] = df.loc[mrn, 'test_4':'test_1'].values
             df.at[mrn, 'test_1'] = creatinine_result
+            # Predict and handle AKI
             features = df.loc[mrn]
             aki = model.predict(features)
             if aki:
@@ -157,7 +156,6 @@ def examine_message(message, df, model):
             return None
 
     elif message[0].split("|")[8] == "ADT^A01":
-        print("PAS")
         mrn = message[1].split("|")[3]
         # Extract age and update dataframe
         dob = message[1].split("|")[7]
@@ -165,11 +163,21 @@ def examine_message(message, df, model):
         df.loc[mrn, 'age'] = age
         # Extract sex and update dataframe
         sex = message[1].split("|")[8]
-        df.loc[mrn, 'sex'] = age
+        sex_bin = 1 if sex == "F" else 0
+        df.loc[mrn, 'sex'] = sex_bin
         return None
 
 
 def calculate_age(dob):
+    """
+    Calculate the age given the date of birth.
+
+    Parameters:
+    dob (str): Date of birth in "%Y%m%d" format.
+
+    Returns:
+    int: Age
+    """
     # Define the format of the date of birth
     dob_format = "%Y%m%d"
 
@@ -184,6 +192,7 @@ def calculate_age(dob):
             (current_datetime.month, current_datetime.day) < (dob_datetime.month, dob_datetime.day))
 
     return age
+
 
 # Threads
 def processor(model, df):
