@@ -206,7 +206,7 @@ def calculate_age(dob):
 
 
 # Threads
-def processor(model, df):
+def processor(address, model, df):
     """
     Process messages and depending on the message type, update the database or make a prediction
     If the message is a admission, update the database
@@ -246,7 +246,7 @@ def processor(model, df):
             # Final part: send paging and acknoladgement (INCLUDE IF STATEMENT TO SEND MRN ONLY IF MESSAGE IS PASSED)
             # First, send the paging
             if mrn:
-                r = urllib.request.urlopen(f"http://localhost:8441/page", data=mrn.encode('utf-8'))
+                r = urllib.request.urlopen(f"http://{address}:8441/page", data=mrn.encode('utf-8'))
                 #this prints are for reference, do not care about them
                 #print("status: ", r.status)
                 #print("http status: ", http.HTTPStatus.OK)
@@ -263,13 +263,13 @@ def processor(model, df):
                 lock.release()
 
 
-def message_reciever():
+def message_reciever(address):
     # Point to global
     global message, send_ack
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             print("Attempting to connect...")
-            s.connect(("localhost", 8440))
+            s.connect((address, 8440))
             print("Connected!")
             while True:
                 # Read the buffer
@@ -311,6 +311,18 @@ def message_reciever():
 
 
 def main():
+    # Getting environment variables
+    if 'MLLP_ADDRESS' in os.environ:
+        print("MLLP_ADDRESS is set.")
+        mllp_address = os.environ['MLLP_ADDRESS']
+    else:
+        mllp_address = "localhost"
+
+    if 'PAGER_ADDRESS' in os.environ:
+        print("PAGER_ADDRESS is set.")
+        pager_address = os.environ['PAGER_ADDRESS']
+    else:
+        mllp_address = "localhost"
     # Load history.csv
     database = preload_history()
     
@@ -326,9 +338,9 @@ def main():
     send_ack = False
 
     # start all threads
-    t1 = threading.Thread(target=message_reciever, daemon=True)
+    t1 = threading.Thread(target=message_reciever(mllp_address), daemon=True)
     t1.start()
-    t2 = threading.Thread(target=processor(model, database), daemon=True)
+    t2 = threading.Thread(target=processor(pager_address, model, database), daemon=True)
     t2.start()
 
     t1.join()
