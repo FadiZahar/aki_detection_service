@@ -40,26 +40,29 @@ lock = threading.Lock()
 # Miscelaneous
 def from_mllp(buffer):
     """
-    Decode a buffer from MLLP encoding to a string.
+    Decodes a buffer from MLLP (Minimum Lower Layer Protocol) encoding to a string, specifically
+    for HL7 message handling. MLLP is a protocol used for the transmission of HL7 messages over
+    network sockets.
 
     Parameters:
-    - buffer: The byte buffer received in MLLP format.
+    - buffer (bytes): The byte buffer received in MLLP format, including start and end block characters.
 
     Returns:
-    - A list of strings, each representing a segment of the HL7 message.
+    - list of str: A list of strings, where each string represents a segment of the decoded HL7 message.
     """
     return str(buffer[1:-3], "ascii").split("\r") # Strip MLLP framing and final \r
 
 
 def to_mllp(segments):
     """
-    Encode a list of HL7 message segments into MLLP format.
+    Encodes a list of HL7 message segments into MLLP format, adding start and end block characters
+    as well as a carriage return to conform with the MLLP standard for HL7 message transmission.
 
     Parameters:
-    - segments: A list of strings, where each string is a segment of an HL7 message.
+    - segments (list of str): A list of strings, where each string is a segment of an HL7 message.
 
     Returns:
-    - A byte string encoded in MLLP format.
+    - bytes: A byte string encoded in MLLP format, ready for transmission over network sockets.
     """
     m = bytes(chr(MLLP_START_OF_BLOCK), "ascii")
     m += bytes("\r".join(segments) + "\r", "ascii")
@@ -67,7 +70,7 @@ def to_mllp(segments):
     return m
 
 
-def preload_history(pathname='data/history.csv'): # Kyoya
+def preload_history(pathname='data/history.csv'):
     """
     Loads historical patient data from a specified CSV file into a pandas DataFrame.
 
@@ -338,7 +341,7 @@ def message_reciever(address):
 
 def main():
     """
-    Main function to initialize and start the HL7 message processing system. It sets up the environment,
+    Main function to initialise and start the HL7 message processing system. It sets up the environment,
     loads necessary resources (such as the patient history database and machine learning model), and starts
     the message receiving and processing threads.
 
