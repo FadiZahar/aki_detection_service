@@ -298,7 +298,6 @@ def message_reciever(address):
 
 
 def main():
-    print("Hiiiiiiii!")
     try:
         # Suppress all warnings
         warnings.filterwarnings("ignore")
@@ -326,8 +325,6 @@ def main():
         global messages, send_ack
         messages = []
         send_ack = False
-
-        print("Hello!")
         t1 = threading.Thread(target=lambda: message_reciever(mllp_address), daemon=True)
         t2 = threading.Thread(target=lambda: processor(pager_address, model, database), daemon=True)
         t1.start()
