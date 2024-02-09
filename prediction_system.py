@@ -49,7 +49,7 @@ def to_mllp(segments):
     return m
 
 
-def preload_history(pathname='/data/history.csv'): # Kyoya
+def preload_history(pathname='data/history.csv'): # Kyoya
     """
     Load the history of the all patients in a pandas dataframe.
     Index: MRN (patient id)
@@ -164,8 +164,6 @@ def examine_message(message, df, model):
             # Predict and handle AKI
             features = df.loc[mrn]
             features = features.to_numpy().reshape(1, -1)
-            #print(features)
-            #print(features[0, 0])
             aki = model.predict(features)
             if aki:
                 return mrn
@@ -270,6 +268,7 @@ def message_reciever(address):
                 buffer = s.recv(1024)
                 if len(buffer) == 0:
                     continue
+                print(buffer)
                 message = from_mllp(buffer)
 
                 # Add message to messages pipeline
@@ -291,6 +290,7 @@ def message_reciever(address):
                         lock.release()
                 # Send acknowledgement
                 ack = to_mllp(ACK)
+                print(ack)
                 s.sendall(ack)
     except Exception as e:
         print(f"An error occurred: {e}") 
@@ -303,6 +303,7 @@ def main():
         # Suppress all warnings
         warnings.filterwarnings("ignore")
 
+        # Add flag for history datafile
         parser = argparse.ArgumentParser()
         parser.add_argument("--pathname", default="data/history.csv")
         flags = parser.parse_args()
@@ -323,6 +324,7 @@ def main():
             print("PAGER_ADDRESS is set: ", pager_address)
         else:
             pager_address = "localhost:8441"
+
         # Load history.csv
         database = preload_history(pathname=flags.pathname)
         
@@ -334,6 +336,8 @@ def main():
         global messages, send_ack
         messages = []
         send_ack = False
+
+        # Initialize threads
         t1 = threading.Thread(target=lambda: message_reciever(mllp_address), daemon=True)
         t2 = threading.Thread(target=lambda: processor(pager_address, model, database), daemon=True)
         t1.start()

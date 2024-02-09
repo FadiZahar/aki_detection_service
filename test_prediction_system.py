@@ -33,3 +33,26 @@ class preload_history_tests(unittest.TestCase):
         # Assert all sex values are None
         self.assertTrue((self.dataframe["sex"].nunique() == 0).all(), "Not all sex values are None")
 
+    def test_to_mllp(self):
+        ACK = [
+            "MSH|^~\&|||||20240129093837||ACK|||2.5",
+            "MSA|AA",
+        ]
+        ack = to_mllp(ACK)
+        assert ack == b'\x0bMSH|^~\\&|||||20240129093837||ACK|||2.5\rMSA|AA\r\x1c\r'
+
+    def test_from_mllp(self):
+        test = b'\x0bMSH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||20240102135300||ADT^A01|||2.5\rPID|1||497030||ROSCOE DOHERTY||19870515|M\r\x1c\r'
+        expected = ['MSH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||20240102135300||ADT^A01|||2.5', 'PID|1||497030||ROSCOE DOHERTY||19870515|M']
+        test = from_mllp(test)
+        assert test == expected
+
+        test = b'MSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||20240331003200||ORU^R01|||2.5\rPID|1||125412\rOBR|1||||||20240331003200\rOBX|1|SN|CREATININE||127.5695463720204'
+        expected = ['SH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||20240331003200||ORU^R01|||2.5', 'PID|1||125412', 'OBR|1||||||20240331003200', 'OBX|1|SN|CREATININE||127.5695463720']
+        test = from_mllp(test)
+        assert test == expected
+
+        test = b'MSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||20240331035800||ADT^A03|||2.5\rPID|1||829339\r\x1c\r'
+        expected = ['SH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||20240331035800||ADT^A03|||2.5', 'PID|1||829339']
+        test = from_mllp(test)
+        assert test == expected
