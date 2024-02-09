@@ -268,7 +268,6 @@ def message_reciever(address):
                 buffer = s.recv(1024)
                 if len(buffer) == 0:
                     continue
-                print(buffer)
                 message = from_mllp(buffer)
 
                 # Add message to messages pipeline
@@ -290,7 +289,6 @@ def message_reciever(address):
                         lock.release()
                 # Send acknowledgement
                 ack = to_mllp(ACK)
-                print(ack)
                 s.sendall(ack)
     except Exception as e:
         print(f"An error occurred: {e}") 
