@@ -16,6 +16,7 @@ from datetime import datetime
 import pickle
 import warnings
 from threading import Event
+import argparse
 
 # Create a global event that threads can check to know when to exit
 stop_event = Event()
@@ -302,6 +303,10 @@ def main():
         # Suppress all warnings
         warnings.filterwarnings("ignore")
 
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--pathname", default="data/history.csv")
+        flags = parser.parse_args()
+
         # Getting environment variables
         if 'MLLP_ADDRESS' in os.environ:
             mllp_address = os.environ['MLLP_ADDRESS']
@@ -319,7 +324,7 @@ def main():
         else:
             pager_address = "localhost:8441"
         # Load history.csv
-        database = preload_history()
+        database = preload_history(pathname=flags.pathname)
         
         # Load the trained model
         with open("trained_model.pkl", "rb") as file:
