@@ -48,7 +48,7 @@ def to_mllp(segments):
     return m
 
 
-def preload_history(pathname='data/history.csv'): # Kyoya
+def preload_history(pathname='/data/history.csv'): # Kyoya
     """
     Load the history of the all patients in a pandas dataframe.
     Index: MRN (patient id)
