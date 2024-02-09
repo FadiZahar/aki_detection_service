@@ -39,10 +39,28 @@ lock = threading.Lock()
 
 # Miscelaneous
 def from_mllp(buffer):
+    """
+    Decode a buffer from MLLP encoding to a string.
+
+    Parameters:
+    - buffer: The byte buffer received in MLLP format.
+
+    Returns:
+    - A list of strings, each representing a segment of the HL7 message.
+    """
     return str(buffer[1:-3], "ascii").split("\r") # Strip MLLP framing and final \r
 
 
 def to_mllp(segments):
+    """
+    Encode a list of HL7 message segments into MLLP format.
+
+    Parameters:
+    - segments: A list of strings, where each string is a segment of an HL7 message.
+
+    Returns:
+    - A byte string encoded in MLLP format.
+    """
     m = bytes(chr(MLLP_START_OF_BLOCK), "ascii")
     m += bytes("\r".join(segments) + "\r", "ascii")
     m += bytes(chr(MLLP_END_OF_BLOCK) + chr(MLLP_CARRIAGE_RETURN), "ascii")
@@ -51,12 +69,19 @@ def to_mllp(segments):
 
 def preload_history(pathname='data/history.csv'): # Kyoya
     """
-    Load the history of the all patients in a pandas dataframe.
-    Index: MRN (patient id)
-    Cols: age, sex , creatinine_result_1, creatinine_result_2, creatinine_result_3, creatinine_result_4, creatinine_result_5 
-    
-    inputs: history.csv
-    outputs: database (pandas dataframe)
+    Loads historical patient data from a specified CSV file into a pandas DataFrame.
+
+    The function processes the CSV file, extracting patient identifiers (MRN) along with
+    demographic information (age and sex, if available) and up to five most recent creatinine
+    test results, filling in missing values as needed to ensure uniformity.
+
+    Parameters:
+    - pathname (str): The file path to the CSV file containing historical patient data.
+                      Defaults to 'data/history.csv'.
+
+    Returns:
+    - pandas.DataFrame: A DataFrame indexed by MRN with columns for age, sex, and the five
+                        most recent creatinine test results for each patient.
     """
     
     with open(pathname, 'r') as file:
@@ -129,20 +154,18 @@ def preload_history(pathname='data/history.csv'): # Kyoya
 
 def examine_message(message, df, model):
     """
-    Extract the features from the HL7 message and local database (pandas dataframe)
+    Examines an HL7 message, updating the patient database or making a prediction based on the
+    message content. The function handles two types of messages: ADT^A01 for admissions, updating
+    patient demographic information, and ORU^R01 for laboratory results, specifically creatinine
+    test results, which may trigger a prediction for acute kidney injury (AKI) using the provided model.
 
-    inputs: MRN, HL7 message (list of strings)
-    outputs: features (list)
+    Parameters:
+    - message (list of str): The HL7 message split into segments.
+    - df (pandas.DataFrame): The current patient database.
+    - model: A trained machine learning model for predicting AKI based on patient test results.
 
-    # extract message type and MRN
-            # based on the message type,
-                # if PAS, retrieve age and sex and update the database
-                # if LIMS,
-                    # extract the creatinine result
-                    # update database
-                    # send features to make a prediction (feeding pretrained model)
-                    # if prediction is positive, send a page to the hospital
-            # send acknoladgement
+    Returns:
+    - str or None: The MRN of a patient if an AKI prediction is positive; otherwise, None.
     """
     # If LIMS message:
     if message[0].split("|")[8] == "ORU^R01":
@@ -184,13 +207,15 @@ def examine_message(message, df, model):
 
 def calculate_age(dob):
     """
-    Calculate the age given the date of birth.
+    Calculates the age of a person based on their date of birth.
+
+    The function computes the age by comparing the current date with the date of birth provided.
 
     Parameters:
-    dob (str): Date of birth in "%Y%m%d" format.
+    - dob (str): The date of birth in "%Y%m%d" format.
 
     Returns:
-    int: Age
+    - int: The calculated age in years.
     """
     # Define the format of the date of birth
     dob_format = "%Y%m%d"
@@ -210,19 +235,22 @@ def calculate_age(dob):
 # Threads
 def processor(address, model, df):
     """
-    Process messages and depending on the message type, update the database or make a prediction
-    If the message is a admission, update the database
-    If the message is a discharge, do nothing
-    If the message is an creatinine result, make a prediction and notify hospital if positive, 
-        (then finally update database)
-    
-    input: message (list of strings)
-    output: None
+    Continuously processes messages from a global queue, updates the database or makes a prediction
+    based on the message type, and optionally sends a notification if a condition (e.g., AKI) is detected.
+
+
+    The function loops indefinitely until a global stop event is set. For each message, it determines
+    the type of HL7 message received, updates the patient database or makes predictions accordingly,
+    and sends notifications based on the outcomes of those predictions.
+
+    Parameters:
+    - address (str): The address to send notifications to, if necessary.
+    - model: A machine learning model used for making predictions based on the data.
+    - df (pd.DataFrame): The patient database represented as a pandas DataFrame.
     """
-    
     # Point to global variables
     global messages, send_ack
-    # Initialize flag to run code
+    # Initialise flag to run code
     run_code = False
     message = None
     try:
@@ -257,6 +285,18 @@ def processor(address, model, df):
 
 
 def message_reciever(address):
+    """
+    Establishes a socket connection to receive HL7 messages, decoding them from MLLP format and adding
+    them to a global queue for processing.
+
+
+    This function continuously listens for incoming messages on the specified socket address. Upon receiving
+    a message, it decodes the message from MLLP format and adds it to a global queue. It also handles sending
+    acknowledgments back through the socket. The loop runs indefinitely until a global stop event is set.
+
+    Parameters:
+    - address (tuple): A tuple containing the hostname and port number for the socket connection.
+    """
     # Point to global
     global message, send_ack
     try:
@@ -297,6 +337,15 @@ def message_reciever(address):
 
 
 def main():
+    """
+    Main function to initialize and start the HL7 message processing system. It sets up the environment,
+    loads necessary resources (such as the patient history database and machine learning model), and starts
+    the message receiving and processing threads.
+
+    Command-line arguments and environment variables are used to configure the system, including specifying
+    the path to the patient history data file, the addresses for the MLLP and pager services. The function
+    waits for a keyboard interrupt or a stop event to gracefully shut down the threads and exit the program.
+    """
     try:
         # Suppress all warnings
         warnings.filterwarnings("ignore")
