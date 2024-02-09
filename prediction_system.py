@@ -14,6 +14,11 @@ import csv
 import statistics
 from datetime import datetime
 import pickle
+import warnings
+from threading import Event
+
+# Create a global event that threads can check to know when to exit
+stop_event = Event()
 
 ACK = [
     "MSH|^~\&|||||20240129093837||ACK|||2.5",
@@ -26,7 +31,6 @@ MLLP_CARRIAGE_RETURN = 0x0d
 
 # Global variables
 global messages, send_ack
-results = []
 dict = {}
 model = None
 lock = threading.Lock()
@@ -44,7 +48,7 @@ def to_mllp(segments):
     return m
 
 
-def preload_history(pathname='data/history.csv'): # Kyoya
+def preload_history(pathname='/data/history.csv'): # Kyoya
     """
     Load the history of the all patients in a pandas dataframe.
     Index: MRN (patient id)
@@ -204,7 +208,6 @@ def calculate_age(dob):
 
     return age
 
-
 # Threads
 def processor(address, model, df):
     """
@@ -223,44 +226,35 @@ def processor(address, model, df):
     # Initialize flag to run code
     run_code = False
     message = None
-    while True:
-       # Send the acknolagment
-        # Acquire the lock before accessing shared variables
-        lock.acquire()
-        try:
-            if len(messages) > 0:
-                message = messages.pop(0)
-                run_code = True
-        finally:
-            # Ensure the lock is always released
-            lock.release()
-        if run_code == True:
-            # Add all the processor bit here
-            # For now, I am testing we receive the messages well with a print
-            #print("From processor:", message)
-            #print("")
-            # TODO: add processor and prediction
-
-            mrn = examine_message(message, df, model)
-            
-            # Final part: send paging and acknoladgement (INCLUDE IF STATEMENT TO SEND MRN ONLY IF MESSAGE IS PASSED)
-            # First, send the paging
-            if mrn:
-                r = urllib.request.urlopen(f"http://{address}:8441/page", data=mrn.encode('utf-8'))
-                #this prints are for reference, do not care about them
-                #print("status: ", r.status)
-                #print("http status: ", http.HTTPStatus.OK)
-
+    try:
+        while not stop_event.is_set():
             # Send the acknolagment
             # Acquire the lock before accessing shared variables
             lock.acquire()
             try:
-                # Critical section of code
-                # Modify shared variables
-                send_ack = True
+                if len(messages) > 0:
+                    message = messages.pop(0)
+                    run_code = True
             finally:
                 # Ensure the lock is always released
                 lock.release()
+            if run_code == True:
+
+                mrn = examine_message(message, df, model)
+            
+                if mrn:
+                    r = urllib.request.urlopen(f"http://{address}:8441/page", data=mrn.encode('utf-8'))
+
+                # Send the acknolagment
+                lock.acquire()
+                try:
+                    send_ack = True
+                finally:
+                    lock.release()
+                # Wait until next message
+                run_code = False               
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 
 def message_reciever(address):
@@ -271,82 +265,92 @@ def message_reciever(address):
             print("Attempting to connect...")
             s.connect((address, 8440))
             print("Connected!")
-            while True:
-                # Read the buffer
+            while not stop_event.is_set():
                 buffer = s.recv(1024)
                 if len(buffer) == 0:
-                    break
+                    continue
                 message = from_mllp(buffer)
-                #print("From message reciever:", message)
+
                 # Add message to messages pipeline
-                # Acquire the lock before accessing shared variables
                 lock.acquire()
                 try:
-                    # Critical section of code
-                    # Modify shared variables
                     messages.append(message)
                 finally:
-                    # Ensure the lock is always released
                     lock.release()
-                
+
                 # Wait for proccess to send the acknowledgement
                 wait_flag = True
                 while wait_flag:
-                    # Acquire the lock before accessing shared variables
                     lock.acquire()
                     try:
                         if send_ack:
                             wait_flag = False
                             send_ack = False
                     finally:
-                        # Ensure the lock is always released
                         lock.release()
-
+                # Send acknowledgement
                 ack = to_mllp(ACK)
                 s.sendall(ack)
-                #print("Message received and ACK sent.")
-                #time.sleep(0.1)
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"An error occurred: {e}") 
+    print("Closing server socket.")
+    s.close()
 
 
 def main():
-    # Getting environment variables
-    if 'MLLP_ADDRESS' in os.environ:
-        print("MLLP_ADDRESS is set.")
-        mllp_address = os.environ['MLLP_ADDRESS']
-    else:
-        mllp_address = "localhost"
+    print("Hiiiiiiii!")
+    try:
+        # Suppress all warnings
+        warnings.filterwarnings("ignore")
 
-    if 'PAGER_ADDRESS' in os.environ:
-        print("PAGER_ADDRESS is set.")
-        pager_address = os.environ['PAGER_ADDRESS']
-    else:
-        mllp_address = "localhost"
-    # Load history.csv
-    database = preload_history()
-    
-    # Load the trained model
-    with open("trained_model.pkl", "rb") as file:
-        model = pickle.load(file)
+        # Getting environment variables
+        if 'MLLP_ADDRESS' in os.environ:
+            mllp_address = os.environ['MLLP_ADDRESS']
+            print("MLLP_ADDRESS is set: ", mllp_address)
+        else:
+            mllp_address = "localhost"
 
-    # use processor functions
-    
-    # Start global variables
-    global messages, send_ack
-    messages = []
-    send_ack = False
+        if 'PAGER_ADDRESS' in os.environ:
+            pager_address = os.environ['PAGER_ADDRESS']
+            print("PAGER_ADDRESS is set: ", pager_address)
+        else:
+            pager_address = "localhost"
+        # Load history.csv
+        database = preload_history()
+        
+        # Load the trained model
+        with open("trained_model.pkl", "rb") as file:
+            model = pickle.load(file)
 
-    # start all threads
-    t1 = threading.Thread(target=message_reciever(mllp_address), daemon=True)
-    t1.start()
-    t2 = threading.Thread(target=processor(pager_address, model, database), daemon=True)
-    t2.start()
+        # Start global variables
+        global messages, send_ack
+        messages = []
+        send_ack = False
 
-    t1.join()
-    t2.join()
+        print("Hello!")
+        t1 = threading.Thread(target=lambda: message_reciever(mllp_address), daemon=True)
+        t2 = threading.Thread(target=lambda: processor(pager_address, model, database), daemon=True)
+        t1.start()
+        t2.start()
 
+        # Instead of blocking indefinitely on join(), wait for threads to complete
+        # in a loop that checks the stop_event status.
+        while True:
+            if stop_event.is_set():
+                print("Stopping threads...")
+                break
+            time.sleep(1)  # Wait a bit for threads to check the stop_event
 
+    except KeyboardInterrupt:
+        print("\nDetected Ctrl+C, setting stop event for threads.")
+        stop_event.set()
+
+    finally:
+        # Ensure that we attempt to join threads even after Ctrl+C
+        # This waits for threads to acknowledge the stop_event and exit
+        t1.join()
+        t2.join()
+        print("Program exited gracefully.")
 
 if __name__ == "__main__":
     main()
