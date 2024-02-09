@@ -10,6 +10,4 @@ COPY data/history.csv /data/
 RUN dos2unix /simulator/prediction_system.py && \
     chmod +x /simulator/prediction_system.py
 WORKDIR /simulator
-EXPOSE 8440
-EXPOSE 8441
 CMD python3 prediction_system.py

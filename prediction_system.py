@@ -48,7 +48,7 @@ def to_mllp(segments):
     return m
 
 
-def preload_history(pathname='/data/history.csv'): # Kyoya
+def preload_history(pathname='data/history.csv'): # Kyoya
     """
     Load the history of the all patients in a pandas dataframe.
     Index: MRN (patient id)
@@ -243,7 +243,7 @@ def processor(address, model, df):
                 mrn = examine_message(message, df, model)
             
                 if mrn:
-                    r = urllib.request.urlopen(f"http://{address}:8441/page", data=mrn.encode('utf-8'))
+                    r = urllib.request.urlopen(f"http://{address}/page", data=mrn.encode('utf-8'))
 
                 # Send the acknolagment
                 lock.acquire()
@@ -263,7 +263,7 @@ def message_reciever(address):
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             print("Attempting to connect...")
-            s.connect((address, 8440))
+            s.connect(address)
             print("Connected!")
             while not stop_event.is_set():
                 buffer = s.recv(1024)
@@ -305,15 +305,19 @@ def main():
         # Getting environment variables
         if 'MLLP_ADDRESS' in os.environ:
             mllp_address = os.environ['MLLP_ADDRESS']
+            hostname, port_str = mllp_address.split(':')
+            port = int(port_str)
+            mllp_address = (hostname, port)
             print("MLLP_ADDRESS is set: ", mllp_address)
+
         else:
-            mllp_address = "localhost"
+            mllp_address = ("localhost", 8440)
 
         if 'PAGER_ADDRESS' in os.environ:
             pager_address = os.environ['PAGER_ADDRESS']
             print("PAGER_ADDRESS is set: ", pager_address)
         else:
-            pager_address = "localhost"
+            pager_address = "localhost:8441"
         # Load history.csv
         database = preload_history()
         
