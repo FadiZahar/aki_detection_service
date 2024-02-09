@@ -164,8 +164,6 @@ def examine_message(message, df, model):
             # Predict and handle AKI
             features = df.loc[mrn]
             features = features.to_numpy().reshape(1, -1)
-            #print(features)
-            #print(features[0, 0])
             aki = model.predict(features)
             if aki:
                 return mrn
