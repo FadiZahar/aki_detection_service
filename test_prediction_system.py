@@ -62,6 +62,25 @@ class TestExamineMessageModel(unittest.TestCase):
         actual_sex = self.df.loc["755374", "sex"]
         self.assertEqual(actual_sex, 1, "Sex should be updated in the DataFrame")
 
+    def test_examine_message_discharge(self):
+        discharge_message_example = [
+            "MSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||20240601162800||ADT^A03|||2.5",
+            "PID|1||521399"
+        ]
+
+        # Make a copy of the DataFrame before processing the discharge message
+        df_before = self.df.copy()
+
+        # Process the discharge message
+        mrn = examine_message(discharge_message_example, self.df, self.model)
+
+        # Assert that no MRN is returned for a discharge message
+        self.assertIsNone(mrn, "MRN should not be returned for a discharge message")
+
+        # Assert that the DataFrame remains unchanged after processing the discharge message
+        pd.testing.assert_frame_equal(self.df, df_before,
+                                      "DataFrame should not be updated after processing a discharge message")
+
     def test_new_patient_entry_creation(self):
         # Patient admission message for a new patient not in the DataFrame
         new_patient_admit_message = [
