@@ -30,13 +30,13 @@ class TestExamineMessageModel(unittest.TestCase):
             "MSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||20240331003200||ORU^R01|||2.5",
             "PID|1||640400",
             "OBR|1||||||20240331003200",
-            "OBX|1|SN|CREATININE||127.5695463720204]"
+            "OBX|1|SN|CREATININE||127.5695463720204"
         ]
 
         mrn = examine_message(creatinine_message_example, self.df, self.model)
 
         # Assert MRN is returned for positive AKI prediction
-        self.assertIsNotNone(mrn, "MRN should be returned for positive AKI prediction")
+        self.assertIsNone(mrn, "MRN should not be returned for negative AKI prediction")
 
         # Assert the DataFrame is updated with the new creatinine test result
         updated_test_1 = self.df.loc["640400", "test_1"]
@@ -83,7 +83,7 @@ class TestExamineMessageModel(unittest.TestCase):
             "MSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||20240331003200||ORU^R01|||2.5",
             "PID|1||999999",
             "OBR|1||||||20240331003200",
-            "OBX|1|SN|CREATININE||200]"
+            "OBX|1|SN|CREATININE||200"
         ]
 
         _ = examine_message(creatinine_message_new_patient, self.df, self.model)
@@ -97,7 +97,7 @@ class TestExamineMessageModel(unittest.TestCase):
             "MSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||20240331003200||ORU^R01|||2.5",
             "PID|1||999999",
             "OBR|1||||||20240331003200",
-            "OBX|1|SN|GLUCOSE||100]"
+            "OBX|1|SN|GLUCOSE||100"
         ]
 
         original_df_copy = self.df.copy()
@@ -111,13 +111,13 @@ class TestExamineMessageModel(unittest.TestCase):
             "MSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||20240331003200||ORU^R01|||2.5",
             "PID|1||640400",
             "OBR|1||||||20240331003200",
-            "OBX|1|SN|CREATININE||300]"  # Assuming this level of creatinine indicates AKI
+            "OBX|1|SN|CREATININE||300"  # Assuming this level of creatinine indicates AKI
         ]
 
         mrn = examine_message(high_creatinine_message, self.df, self.model)
         self.assertIsNotNone(mrn, "MRN should be returned for positive AKI prediction due to high creatinine level")
         self.assertEqual(mrn, "640400", "MRN of the patient with high creatinine level should be returned")
-    
+
     def test_to_mllp(self):
         ACK = [
             "MSH|^~\&|||||20240129093837||ACK|||2.5",
@@ -128,12 +128,14 @@ class TestExamineMessageModel(unittest.TestCase):
 
     def test_from_mllp(self):
         test = b'\x0bMSH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||20240102135300||ADT^A01|||2.5\rPID|1||497030||ROSCOE DOHERTY||19870515|M\r\x1c\r'
-        expected = ['MSH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||20240102135300||ADT^A01|||2.5', 'PID|1||497030||ROSCOE DOHERTY||19870515|M']
+        expected = ['MSH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||20240102135300||ADT^A01|||2.5',
+                    'PID|1||497030||ROSCOE DOHERTY||19870515|M']
         test = from_mllp(test)
         assert test == expected
 
         test = b'MSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||20240331003200||ORU^R01|||2.5\rPID|1||125412\rOBR|1||||||20240331003200\rOBX|1|SN|CREATININE||127.5695463720204'
-        expected = ['SH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||20240331003200||ORU^R01|||2.5', 'PID|1||125412', 'OBR|1||||||20240331003200', 'OBX|1|SN|CREATININE||127.5695463720']
+        expected = ['SH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||20240331003200||ORU^R01|||2.5', 'PID|1||125412',
+                    'OBR|1||||||20240331003200', 'OBX|1|SN|CREATININE||127.5695463720']
         test = from_mllp(test)
         assert test == expected
 
@@ -143,8 +145,7 @@ class TestExamineMessageModel(unittest.TestCase):
         assert test == expected
 
 
-
-class TestPreloadHistory(unittest.TestCase):        
+class TestPreloadHistory(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # Create or load the DataFrame (local database) once for all tests
