@@ -23,12 +23,12 @@ ACK = [
 ]
 
 # Constants defining the MLLP (Minimum Lower Layer Protocol) framing.
-MLLP_START_OF_BLOCK = 0x0b  # Start block character
-MLLP_END_OF_BLOCK = 0x1c    # End block character
-MLLP_CARRIAGE_RETURN = 0x0d # Carriage return character
+MLLP_START_OF_BLOCK = 0x0b  
+MLLP_END_OF_BLOCK = 0x1c    
+MLLP_CARRIAGE_RETURN = 0x0d 
 
 # Shared state for message processing and acknowledgment signaling.
-global messages, send_ack   # Global variables
+global messages, send_ack
 
 # Model for processing messages. Load with appropriate model before use.
 model = None
@@ -37,7 +37,6 @@ model = None
 lock = threading.Lock()
 
 
-# Miscelaneous
 def from_mllp(buffer: bytes) -> list[str]:
     """Decodes a buffer from MLLP encoding to a list of HL7 message segments.
 
@@ -54,7 +53,6 @@ def from_mllp(buffer: bytes) -> list[str]:
     Returns:
         list: A list of strings, each representing a segment of the HL7 message.
     """
-    # Strip MLLP framing and final \r
     return str(buffer[1:-3], "ascii").split("\r")
 
 
@@ -113,7 +111,6 @@ def preload_history(pathname: str = 'data/history.csv') -> pd.DataFrame:
         count = 0
         file = csv.reader(file)
         
-        # Initialise lists for storing MRNs, demographic info, and test results.
         all_mrns = []
         all_constants = []
         all_results = []
@@ -128,36 +125,32 @@ def preload_history(pathname: str = 'data/history.csv') -> pd.DataFrame:
             # Filter out empty fields from the row.
             cleaned_row = [value for value in row if value != '']
             
-            # Extract MRN and initialise age, sex placeholders.
             mrn = cleaned_row[0]
             age = None
             sex = None
 
-            # Extract creatinine test results and order them most recent first.
+            # Order creatinine test results, most recent first.
             constants =[age, sex]
             test_results = list(map(float, cleaned_row[2::2]))
-            test_results.reverse()  # Most recent results first.
+            test_results.reverse()
 
-            # Append processed data for each patient.
             all_mrns.append(mrn)
             all_constants.append(constants)
             all_results.append(test_results)
                 
         print(f'Extraction finished.\n')
 
-    # Make all patients have the same number of test results.
+    # Specify the number of tests per patient to input the model
     number_of_tests = 5
 
     all_results_constant = all_results.copy()
 
     print('Starting to process extracted data...')
     for row in range(len(all_results_constant)):
-        # Extend lists with < 5 test results using the mean of existing results.
         if len(all_results_constant[row]) < number_of_tests:
             list_of_means = [statistics.mean(all_results_constant[row]) for i
                              in range(5-len(all_results_constant[row]))]
             all_results_constant[row].extend(list_of_means)
-        # Trim lists with more than 5 test results to the most recent 5.
         elif len(all_results_constant[row]) > number_of_tests:
             all_results_constant[row] = all_results_constant[row][:5]
 
@@ -168,7 +161,6 @@ def preload_history(pathname: str = 'data/history.csv') -> pd.DataFrame:
     for i in range(len(all_results_constant)):
         processed[i].extend(all_results_constant[i])
 
-    # Create a DataFrame with structured patient data, indexed by MRN.
     column_names = ['age', 'sex'] + \
                    [f'test_{i}' for i in range(1, number_of_tests+1)]
     df = pd.DataFrame(processed, columns=[column_names], index=all_mrns)
@@ -205,7 +197,6 @@ def examine_message(message: list[str], df: pd.DataFrame, model) -> str | None:
         mrn = message[1].split("|")[3]
         creatinine_result = float(message[3].split("|")[5])
 
-        # Initialise or update test results in the patient's record.
         if df.loc[mrn, ['test_1', 'test_2', 'test_3', 'test_4', 'test_5']]\
                 .isnull().any():
             # Assuming 'age' and 'sex' are already set through another process,
@@ -227,11 +218,11 @@ def examine_message(message: list[str], df: pd.DataFrame, model) -> str | None:
     # Process PAS (admission message) to update demographic info.
     elif message[0].split("|")[8] == "ADT^A01":
         mrn = message[1].split("|")[3]
-        # Extract date of birth (dob), calculate age, then update dataframe
-        dob = message[1].split("|")[7]
-        age = calculate_age(dob)
+
+        date_of_birth = message[1].split("|")[7]
+        age = calculate_age(date_of_birth)
         df.loc[mrn, 'age'] = age
-        # Extract sex, transform it into one-hot encoding, then update dataframe
+
         sex = message[1].split("|")[8]
         sex_bin = 1 if sex == "F" else 0
         df.loc[mrn, 'sex'] = sex_bin
@@ -250,16 +241,12 @@ def calculate_age(dob: str) -> int:
     Returns:
         int: The calculated age in years.
     """
-    # Define the format of the date of birth
     dob_format = "%Y%m%d"
 
-    # Convert DOB from string to datetime object
     dob_datetime = datetime.strptime(dob, dob_format)
 
-    # Get the current datetime
     current_datetime = datetime.now()
 
-    # Calculate age
     age = current_datetime.year - dob_datetime.year - (
             (current_datetime.month, current_datetime.day) <
             (dob_datetime.month, dob_datetime.day))
@@ -267,7 +254,6 @@ def calculate_age(dob: str) -> int:
     return age
 
 
-# Threads
 def processor(address: str, model, df: pd.DataFrame) -> None:
     """Processes messages, updates database or makes predictions, and sends
     notifications.
@@ -285,23 +271,19 @@ def processor(address: str, model, df: pd.DataFrame) -> None:
         This function relies on global variables including a stop event, a lock,
         and message queues. It requires external setup of these components.
     """
-    # Point to global variables
     global messages, send_ack
-    # Initialise flag to run code
+    # Flag variables
     run_code = False
     message = None
 
     try:
         while not stop_event.is_set():
-            # Send the acknowledgment
-            # Acquire the lock before accessing shared variables
             lock.acquire()
             try:
                 if len(messages) > 0:
                     message = messages.pop(0)
                     run_code = True
             finally:
-                # Ensure the lock is always released
                 lock.release()
 
             if run_code == True:
@@ -309,14 +291,14 @@ def processor(address: str, model, df: pd.DataFrame) -> None:
                 if mrn:
                     r = urllib.request.urlopen(f"http://{address}/page",
                                                data=mrn.encode('utf-8'))
-                # Send the acknowledgment
+                # When the process ends, inform message_receiver to acknowledge
                 lock.acquire()
                 try:
                     send_ack = True
                 finally:
                     lock.release()
-                # Wait until next message
-                run_code = False               
+                run_code = False
+
     except Exception as e:
         print(f"An error occurred: {e}")
 
@@ -334,7 +316,6 @@ def message_receiver(address: tuple[str, int]) -> None:
         address (tuple[str, int]): Hostname and port number for the socket
                                    connection.
     """
-    # Point to global
     global message, send_ack
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -347,14 +328,13 @@ def message_receiver(address: tuple[str, int]) -> None:
                     continue
                 message = from_mllp(buffer)
 
-                # Add message to messages pipeline
                 lock.acquire()
                 try:
                     messages.append(message)
                 finally:
                     lock.release()
 
-                # Wait for process to send the acknowledgement
+                # Wait to receive heads-up to acknowledge from processor
                 wait_flag = True
                 while wait_flag:
                     lock.acquire()
@@ -364,9 +344,9 @@ def message_receiver(address: tuple[str, int]) -> None:
                             send_ack = False
                     finally:
                         lock.release()
-                # Send acknowledgement
                 ack = to_mllp(ACK)
                 s.sendall(ack)
+
     except Exception as e:
         print(f"An error occurred: {e}") 
     print("Closing server socket.")
@@ -387,22 +367,18 @@ def main() -> None:
         configuring the addresses of the MLLP and pager services, respectively.
     """
     try:
-        # Suppress all warnings
         warnings.filterwarnings("ignore")
 
-        # Add flag for history datafile
         parser = argparse.ArgumentParser()
         parser.add_argument("--pathname", default="data/history.csv")
         flags = parser.parse_args()
 
-        # Getting environment variables
         if 'MLLP_ADDRESS' in os.environ:
             mllp_address = os.environ['MLLP_ADDRESS']
             hostname, port_str = mllp_address.split(':')
             port = int(port_str)
             mllp_address = (hostname, port)
             print("MLLP_ADDRESS is set: ", mllp_address)
-
         else:
             mllp_address = ("localhost", 8440)
 
@@ -412,19 +388,15 @@ def main() -> None:
         else:
             pager_address = "localhost:8441"
 
-        # Load history.csv
         database = preload_history(pathname=flags.pathname)
         
-        # Load the trained model
         with open("trained_model.pkl", "rb") as file:
             model = pickle.load(file)
 
-        # Start global variables
         global messages, send_ack
         messages = []
         send_ack = False
 
-        # Initialize threads
         t1 = threading.Thread(target=lambda: message_receiver(mllp_address),
                               daemon=True)
         t2 = threading.Thread(target=lambda: processor(pager_address, model,
