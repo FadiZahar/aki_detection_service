@@ -35,7 +35,7 @@ class TestExamineMessageModel(unittest.TestCase):
 
         mrn = examine_message(creatinine_message_example, self.df, self.model)
 
-        # Assert MRN is returned for positive AKI prediction
+        # Assert MRN is not returned for negative AKI prediction
         self.assertIsNone(mrn, "MRN should not be returned for negative AKI prediction")
 
         # Assert the DataFrame is updated with the new creatinine test result
@@ -55,7 +55,7 @@ class TestExamineMessageModel(unittest.TestCase):
 
         # Assert age and sex are updated correctly
         dob = "19940216"
-        expected_age = calculate_age(dob)  # Ensure your calculate_age function correctly calculates age from dob
+        expected_age = calculate_age(dob)
         actual_age = self.df.loc["755374", "age"]
         self.assertEqual(actual_age, expected_age, "Age should be updated in the DataFrame")
 
