@@ -30,18 +30,18 @@ spec:
       - name: aki-detection
         image: imperialswemlsspring2024.azurecr.io/coursework4-devesa
         command: ["python3"] 
-        args:
-        - "prediction_system.py"
-        - "--pathname=/hospital-history/history.csv"
+        args: ["prediction_system.py", "--pathname=/hospital-history/history.csv"]
         env:
         - name: MLLP_ADDRESS
           value: devesa-simulator.hospital:8440
         - name: PAGER_ADDRESS
           value: devesa-simulator.hospital:8441
-        volumeMounts:
+        volumeMounts: ## move to here
           - mountPath: "/hospital-history"
             name: hospital-history
             readOnly: true
+          - mountPath: "/state"  ## move from here
+            name: aki-detection-state
         resources:
           requests:
             memory: 1Gi
@@ -52,8 +52,6 @@ spec:
         volumeMounts:
           - mountPath: "/hospital-history"
             name: hospital-history
-          - mountPath: "/state"
-            name: aki-detection-state
         resources:
           requests:
             memory: 1Gi
