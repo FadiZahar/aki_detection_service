@@ -28,7 +28,10 @@ MLLP_END_OF_BLOCK = 0x1c
 MLLP_CARRIAGE_RETURN = 0x0d 
 
 # Shared state for message processing and acknowledgment signaling.
-global messages, send_ack
+global messages, send_ack, pending_predictions
+
+# Initialising pending flag in case LIMS is received but age & sex are missing
+pending_predictions = []
 
 # Model for processing messages. Load with appropriate model before use.
 model = None
@@ -130,7 +133,7 @@ def preload_history(pathname: str = 'data/history.csv') -> pd.DataFrame:
             sex = None
 
             # Order creatinine test results, most recent first.
-            constants =[age, sex]
+            constants = [age, sex]
             test_results = list(map(float, cleaned_row[2::2]))
             test_results.reverse()
 
@@ -141,29 +144,31 @@ def preload_history(pathname: str = 'data/history.csv') -> pd.DataFrame:
         print(f'Extraction finished.\n')
 
     # Specify the number of tests per patient to input the model
-    number_of_tests = 5
+    required_number_of_tests = 5
 
-    all_results_constant = all_results.copy()
+    all_results_processed = all_results.copy()
 
     print('Starting to process extracted data...')
-    for row in range(len(all_results_constant)):
-        if len(all_results_constant[row]) < number_of_tests:
-            list_of_means = [statistics.mean(all_results_constant[row]) for i
-                             in range(5-len(all_results_constant[row]))]
-            all_results_constant[row].extend(list_of_means)
-        elif len(all_results_constant[row]) > number_of_tests:
-            all_results_constant[row] = all_results_constant[row][:5]
+    for row in range(len(all_results_processed)):
+        current_number_of_tests = len(all_results_processed[row])
+        if current_number_of_tests < required_number_of_tests:
+            mean_value = statistics.mean(all_results_processed[row])
+            all_results_processed[row].extend(
+                [mean_value]*(required_number_of_tests-current_number_of_tests)
+            )
+        elif current_number_of_tests > required_number_of_tests:
+            all_results_processed[row] = all_results_processed[row][:5]
 
     print(f'Processing finished.\n')
 
     # Merge demographic info with test results.
-    processed = all_constants.copy()
-    for i in range(len(all_results_constant)):
-        processed[i].extend(all_results_constant[i])
+    processed_data = []
+    for constants, results in zip(all_constants, all_results_processed):
+        processed_data.append(constants + results)
 
     column_names = ['age', 'sex'] + \
-                   [f'test_{i}' for i in range(1, number_of_tests+1)]
-    df = pd.DataFrame(processed, columns=[column_names], index=all_mrns)
+                   [f'test_{i}' for i in range(1, required_number_of_tests+1)]
+    df = pd.DataFrame(processed_data, columns=[column_names], index=all_mrns)
     
     return df
 
@@ -191,41 +196,71 @@ def examine_message(message: list[str], df: pd.DataFrame, model) -> str | None:
         Assumes messages always conform to their expected format, being valid
         LIMS and PAS messages.
     """
-    # Process LIMS (test result) for creatinine.
-    if message[0].split("|")[8] == "ORU^R01" and \
-            message[3].split("|")[3] == "CREATININE":
+    global pending_predictions
+
+    try:
+        message_type = message[0].split("|")[8]
         mrn = message[1].split("|")[3]
-        creatinine_result = float(message[3].split("|")[5])
+        if not mrn.isdigit():
+            return None
 
-        if df.loc[mrn, ['test_1', 'test_2', 'test_3', 'test_4', 'test_5']]\
-                .isnull().any():
-            # Assuming 'age' and 'sex' are already set through another process,
-            # only initialise the test results if MRN is new (new record).
-            df.loc[mrn, ['test_1', 'test_2', 'test_3', 'test_4', 'test_5']] \
-                = [creatinine_result] * 5
-        else:
-            # Shift existing test results and insert the new creatinine result
-            # at 'test_1' for an existing MRN (existing record).
-            df.loc[mrn, 'test_5':'test_2'] = \
-                df.loc[mrn, 'test_4':'test_1'].values
-            df.at[mrn, 'test_1'] = creatinine_result
+        if mrn not in df.index:
+            df.loc[mrn] = [None] * len(df.columns)
 
-        # Use the model to predict AKI based on updated test results.
-        features = df.loc[mrn].to_numpy().reshape(1, -1)
-        aki = model.predict(features)
-        return mrn if aki else None
+        # Process LIMS (test result) for creatinine.
+        if message_type == "ORU^R01":
+            test_type = message[3].split("|")[3]
+            creatinine_result_str = message[3].split("|")[5]
+            if test_type != "CREATININE" or not \
+                    creatinine_result_str.replace('.', '', 1).isdigit():
+                return None
+            creatinine_result = float(creatinine_result_str)
 
-    # Process PAS (admission message) to update demographic info.
-    elif message[0].split("|")[8] == "ADT^A01":
-        mrn = message[1].split("|")[3]
+            # Check if this is the first test result for the MRN.
+            if df.loc[mrn, ['test_1', 'test_2', 'test_3', 'test_4', 'test_5']]\
+                    .isnull().any():
+                # initialise them with the current test result.
+                df.loc[mrn, ['test_1', 'test_2', 'test_3', 'test_4', 'test_5']]\
+                    = [creatinine_result] * 5
+            else:
+                # Shift existing results to make room for new one at 'test_1'.
+                df.loc[mrn, 'test_2':'test_5'] = \
+                    df.loc[mrn, 'test_1':'test_4'].values
+                df.at[mrn, 'test_1'] = creatinine_result
 
-        date_of_birth = message[1].split("|")[7]
-        age = calculate_age(date_of_birth)
-        df.loc[mrn, 'age'] = age
+            # Check if age and sex are present before making a prediction
+            if not pd.isnull(df.at[mrn, 'age']) and \
+                    not pd.isnull(df.at[mrn, 'sex']):
+                features = df.loc[mrn].to_numpy().reshape(1, -1)
+                aki = model.predict(features)
+                return mrn if aki else None
+            else:
+                pending_predictions.append(mrn)
+                return None
 
-        sex = message[1].split("|")[8]
-        sex_bin = 1 if sex == "F" else 0
-        df.loc[mrn, 'sex'] = sex_bin
+        # Process PAS (admission/discharge message) to update demographic info.
+        elif message_type in ["ADT^A01", "ADT^A03"]:
+            date_of_birth = message[1].split("|")[7]
+            sex = message[1].split("|")[8]
+            if not is_valid_dob(date_of_birth) or sex not in ["F", "M"]:
+                return None
+
+            age = calculate_age(date_of_birth)
+            df.at[mrn, 'age'] = age
+            sex_bin = 1 if sex == "F" else 0
+            df.at[mrn, 'sex'] = sex_bin
+
+            # Check for pending predictions now that demographic info is updated
+            if mrn in pending_predictions:
+                features = df.loc[mrn].to_numpy().reshape(1, -1)
+                aki = model.predict(features)
+                pending_predictions.remove(mrn)
+                return mrn if aki else None
+            return None
+
+    except IndexError as e:
+        # Catch indexing errors indicating invalid message formats
+        print(f"Error processing message: {e}")
         return None
 
 
@@ -241,10 +276,7 @@ def calculate_age(dob: str) -> int:
     Returns:
         int: The calculated age in years.
     """
-    dob_format = "%Y%m%d"
-
-    dob_datetime = datetime.strptime(dob, dob_format)
-
+    dob_datetime = datetime.strptime(dob, "%Y%m%d")
     current_datetime = datetime.now()
 
     age = current_datetime.year - dob_datetime.year - (
@@ -252,6 +284,22 @@ def calculate_age(dob: str) -> int:
             (dob_datetime.month, dob_datetime.day))
 
     return age
+
+
+def is_valid_dob(dob: str) -> bool:
+    """Check if the date of birth is in the correct format "%Y%m%d".
+
+    Args:
+        dob (str): The date of birth.
+
+    Returns:
+        bool: True if dob is in the "%Y%m%d" format, False otherwise.
+    """
+    try:
+        datetime.strptime(dob, "%Y%m%d")
+        return True
+    except ValueError:
+        return False
 
 
 def processor(address: str, model, df: pd.DataFrame) -> None:
