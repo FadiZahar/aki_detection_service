@@ -39,6 +39,19 @@ model = None
 # Synchronisation lock for managing access to shared resources.
 lock = threading.Lock()
 
+#
+
+
+def initialize_file(file_name='positive_predictions.txt'):
+    # This function creates the file if it doesn't exist or clears it if it exists
+    with open(file_name, 'w') as file:
+        pass  # Just opening and closing the file will create it or clear it
+
+def add_prediction(prediction, file_name='positive_predictions.txt'):
+    # This function adds a new prediction to the file
+    with open(file_name, 'a') as file:  # Open file in append mode
+        file.write(prediction + '\n')  # Add the prediction and a newline character
+
 
 def from_mllp(buffer: bytes) -> list[str]:
     """Decodes a buffer from MLLP encoding to a list of HL7 message segments.
@@ -337,6 +350,7 @@ def processor(address: str, model, df: pd.DataFrame) -> None:
             if run_code == True:
                 mrn = examine_message(message, df, model)
                 if mrn:
+                    add_prediction(mrn)
                     r = urllib.request.urlopen(f"http://{address}/page",
                                                data=mrn.encode('utf-8'))
                 # When the process ends, inform message_receiver to acknowledge

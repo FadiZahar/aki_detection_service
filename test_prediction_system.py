@@ -4,6 +4,7 @@ import pickle
 from prediction_system import *
 
 
+
 class TestExamineMessageModel(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -194,6 +195,47 @@ class TestPreloadHistory(unittest.TestCase):
     def test_all_sex_values_none(self):
         # Assert all sex values are None
         self.assertTrue((self.dataframe["sex"].nunique() == 0).all(), "Not all sex values are None")
+
+class TestF3Score(unittest.TestCase):
+    def get_info(self):
+        ids_list_predicted = []
+        ids_list_actual=[]
+        # Open the file for reading
+        with open("positive_predictions.txt", 'r') as file:
+            # Read each line in the file
+            for line in file:
+                # Strip whitespace and add the ID to the list
+                ids_list_predicted.append(line.strip())
+
+        with open("actual_values.txt", 'r') as file:
+            # Read each line in the file
+            for line in file:
+                # Strip whitespace and add the ID to the list
+                ids_list_actual.append(line.strip())
+
+        TP=0
+        TN=0
+        FP=0
+        for point in ids_list_actual:
+            if point in ids_list_predicted:
+                TP+=1
+            else:
+                TN+=1
+        for point in ids_list_predicted:
+            if point not in ids_list_actual:
+                FP+=1
+        ###will need the total number of messages to calculate F3 score
+        FN=total_num_messages-TN-TP-FP
+            # Calculate precision
+        precision = TP / (TP + FP) if (TP + FP) > 0 else 0
+        
+        # Calculate recall
+        recall = TP / (TP + FN) if (TP + FN) > 0 else 0
+        
+        # Calculate F3 score
+        beta = 3
+        f3_score = ((1 + beta**2) * precision * recall) / ((beta**2 * precision) + recall) if (precision + recall) > 0 else 0
+        self.assertTrue((f3_score>0.95),"The F3 score is below the required threshhold(0.95)")
 
 
 if __name__ == '__main__':
