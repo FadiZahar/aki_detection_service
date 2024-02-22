@@ -11,7 +11,7 @@ from datetime import datetime
 import pickle
 import warnings
 import argparse
-from prometheus_client import Counter
+from prometheus_client import Counter, start_http_server
 
 # Global event to signal threads when to exit, used for graceful shutdown.
 stop_event = threading.Event()
@@ -417,8 +417,13 @@ def main() -> None:
         configuring the addresses of the MLLP and pager services, respectively.
     """
     try:
+        # Initialise Prometheus metrics
         messages_received = Counter("messages_received", "Number of messages received") # initialise messages received counter for metrics
         messages_processed = Counter("messages_processed", "Number of messages processed") # initialise messages processed counter for metrics
+        
+        # Start the server to expose the metrics
+        start_http_server(8000)
+
         
         warnings.filterwarnings("ignore")
 
