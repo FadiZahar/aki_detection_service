@@ -11,7 +11,7 @@ from datetime import datetime
 import pickle
 import warnings
 import argparse
-
+from prometheus_client import Counter
 
 # Global event to signal threads when to exit, used for graceful shutdown.
 stop_event = threading.Event()
@@ -302,7 +302,7 @@ def is_valid_dob(dob: str) -> bool:
         return False
 
 
-def processor(address: str, model, df: pd.DataFrame) -> None:
+def processor(address: str, model, df: pd.DataFrame, messages_received, messages_processed) -> None:
     """Processes messages, updates database or makes predictions, and sends
     notifications.
 
@@ -330,6 +330,7 @@ def processor(address: str, model, df: pd.DataFrame) -> None:
             try:
                 if len(messages) > 0:
                     message = messages.pop(0)
+                    messages_received.inc() # once received, increment the messages received counter
                     run_code = True
             finally:
                 lock.release()
@@ -343,6 +344,7 @@ def processor(address: str, model, df: pd.DataFrame) -> None:
                 lock.acquire()
                 try:
                     send_ack = True
+                    messages_processed.inc() # once acknowledged, increment the messages processed counter
                 finally:
                     lock.release()
                 run_code = False
@@ -415,6 +417,9 @@ def main() -> None:
         configuring the addresses of the MLLP and pager services, respectively.
     """
     try:
+        messages_received = Counter("messages_received", "Number of messages received") # initialise messages received counter for metrics
+        messages_processed = Counter("messages_processed", "Number of messages processed") # initialise messages processed counter for metrics
+        
         warnings.filterwarnings("ignore")
 
         parser = argparse.ArgumentParser()
