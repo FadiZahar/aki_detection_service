@@ -458,7 +458,7 @@ def main() -> None:
         t1 = threading.Thread(target=lambda: message_receiver(mllp_address),
                               daemon=True)
         t2 = threading.Thread(target=lambda: processor(pager_address, model,
-                                                       database), daemon=True)
+                                                       database, messages_received, messages_processed), daemon=True)
         t1.start()
         t2.start()
 
