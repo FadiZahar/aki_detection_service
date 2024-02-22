@@ -33,9 +33,9 @@ spec:
         args: ["prediction_system.py", "--pathname=/hospital-history/history.csv"]
         env:
         - name: MLLP_ADDRESS
-          value: devesa-simulator.hospital:8440
+          value: devesa-simulator.coursework5:8440
         - name: PAGER_ADDRESS
-          value: devesa-simulator.hospital:8441
+          value: devesa-simulator.coursework5:8441
         volumeMounts: ## move to here
           - mountPath: "/hospital-history"
             name: hospital-history
@@ -48,7 +48,7 @@ spec:
             cpu: 1
       initContainers:
       - name: copy-hospital-history
-        image: imperialswemlsspring2024.azurecr.io/coursework4-history
+        image: imperialswemlsspring2024.azurecr.io/coursework5-history
         volumeMounts:
           - mountPath: "/hospital-history"
             name: hospital-history
