@@ -11,7 +11,11 @@ from datetime import datetime
 import pickle
 import warnings
 import argparse
+from prometheus_client import Counter, start_http_server
 
+# Prometheus Counters
+MESSAGES_RECEIVED = Counter('messages_received', 'Number of messages received')
+MESSAGES_PROCESSED = Counter('messages_processed', 'Number of messages processed')
 
 # Global event to signal threads when to exit, used for graceful shutdown.
 stop_event = threading.Event()
@@ -331,6 +335,7 @@ def message_receiver(address: tuple[str, int]) -> None:
                 lock.acquire()
                 try:
                     messages.append(message)
+                    MESSAGES_RECEIVED.inc()  # Increment messages received counter
                 finally:
                     lock.release()
 
@@ -346,6 +351,7 @@ def message_receiver(address: tuple[str, int]) -> None:
                         lock.release()
                 ack = to_mllp(ACK)
                 s.sendall(ack)
+                MESSAGES_PROCESSED.inc()  # Increment messages processed counter
 
     except Exception as e:
         print(f"An error occurred: {e}") 
@@ -425,4 +431,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    start_http_server(8000)
     main()
