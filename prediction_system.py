@@ -25,7 +25,11 @@ BLOOD_TEST_RESULTS_RECEIVED = Counter('blood_test_results_received', 'Number of 
 POSITIVE_AKI_PREDICTIONS = Counter('positive_aki_predictions', 'Number of positive AKI predictions')
 UNSUCCESSFUL_PAGER_REQUESTS = Counter('unsuccessful_pager_requests', 'Number of unsuccessful pager HTTP requests')
 MLLP_SOCKET_RECONNECTIONS = Counter('mllp_socket_reconnections', 'Number of reconnections to the MLLP socket')
-BLOOD_TEST_RESULT_DISTRIBUTION = Histogram('blood_test_result_distribution', 'Distribution of blood test result values')
+BLOOD_TEST_RESULT_DISTRIBUTION = Histogram(
+    'blood_test_result_distribution',
+    'Distribution of blood test result values',
+    buckets=[0, 50, 100, 150, 200, 250, 300, float("inf")]
+)
 
 # Configure logging
 logging.basicConfig(
