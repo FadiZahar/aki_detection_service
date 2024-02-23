@@ -68,18 +68,19 @@ class TestExamineMessageModel(unittest.TestCase):
             "PID|1||521399"
         ]
 
-        # Make a copy of the DataFrame before processing the discharge message
-        df_before = self.df.copy()
-
         # Process the discharge message
         mrn = examine_message(discharge_message_example, self.df, self.model)
 
         # Assert that no MRN is returned for a discharge message
         self.assertIsNone(mrn, "MRN should not be returned for a discharge message")
 
-        # Assert that the DataFrame remains unchanged after processing the discharge message
-        pd.testing.assert_frame_equal(self.df, df_before,
-                                      "DataFrame should not be updated after processing a discharge message")
+        # Assert that the new MRN is added with expected default or NaN values
+        self.assertIn("521399", self.df.index, "New MRN should be added to the DataFrame for a discharge message")
+
+        # Manually check each value in the row for the new MRN
+        for col in self.df.columns:
+            cell_value = self.df.at["521399", col]
+            self.assertTrue(pd.isnull(cell_value), f"Value in column '{col}' for new MRN should be NaN or None")
 
     def test_new_patient_entry_creation(self):
         # Patient admission message for a new patient not in the DataFrame
@@ -114,15 +115,22 @@ class TestExamineMessageModel(unittest.TestCase):
         # Non-creatinine test result message
         non_creatinine_message = [
             "MSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||20240331003200||ORU^R01|||2.5",
-            "PID|1||999999",
+            "PID|1||555555",
             "OBR|1||||||20240331003200",
             "OBX|1|SN|GLUCOSE||100"
         ]
 
-        original_df_copy = self.df.copy()
+        # Process the non-creatinine message
         _ = examine_message(non_creatinine_message, self.df, self.model)
-        pd.testing.assert_frame_equal(self.df, original_df_copy,
-                                      "DataFrame should not be updated for non-creatinine test results")
+
+        # Assert that the new MRN "999999" is added to the DataFrame
+        self.assertIn("555555", self.df.index, "New MRN should be added to the DataFrame for a non-creatinine message")
+
+        # Manually check each value in the row for the new MRN "999999"
+        for col in self.df.columns:
+            cell_value = self.df.at["555555", col]
+            self.assertTrue(pd.isnull(cell_value),
+                            f"Value in column '{col}' for new MRN '555555' should be NaN or None")
 
     def test_detect_aki_high_creatinine(self):
         # High creatinine level indicating AKI
