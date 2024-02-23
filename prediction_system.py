@@ -190,7 +190,7 @@ def preload_history_to_sqlite(db_path='/state/my_database.db', pathname='/hospit
     Parameters:
     - db_path (str): The file path to the SQLite database. Defaults to 'my_database.db'.
     - pathname (str): The file path to the CSV file containing historical patient data.
-                      Defaults to 'data/history.csv'.
+                      Defaults to 'hospital-history/history.csv'.
     """
     
     # Connect to the SQLite database
