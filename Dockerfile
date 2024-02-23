@@ -37,4 +37,4 @@ RUN TEST_RESULT=$? && if [ $TEST_RESULT -eq 0 ]; then \
                             exit 1; \
                         fi
 # Final command to execute if tests pass
-CMD python3 prediction_system.py --pathname=/data/history.csv
+CMD python3 prediction_system.py --pathname=/hospital-history/history.csv

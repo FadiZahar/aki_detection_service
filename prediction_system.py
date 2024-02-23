@@ -179,7 +179,7 @@ def processor(address: str, model) -> None:
         print(f"An error occurred: {e}")
 
 
-def preload_history_to_sqlite(db_path='my_database.db', pathname='data/history.csv'):
+def preload_history_to_sqlite(db_path='/state/my_database.db', pathname='/hospital-history/history.csv'):
     """
     Loads historical patient data from a specified CSV file and inserts it into an SQLite database.
     
@@ -418,7 +418,7 @@ def main() -> None:
         warnings.filterwarnings("ignore")
 
         parser = argparse.ArgumentParser()
-        parser.add_argument("--pathname", default="data/history.csv")
+        parser.add_argument("--pathname", default="/hospital-history/history.csv")
         flags = parser.parse_args()
 
         if 'MLLP_ADDRESS' in os.environ:
