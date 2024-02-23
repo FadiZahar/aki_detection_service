@@ -11,11 +11,16 @@ from datetime import datetime
 import pickle
 import warnings
 import argparse
-from prometheus_client import Counter, start_http_server
+from prometheus_client import Counter, start_http_server, Histogram
 
 # Prometheus Counters
 MESSAGES_RECEIVED = Counter('messages_received', 'Number of messages received')
 MESSAGES_PROCESSED = Counter('messages_processed', 'Number of messages processed')
+BLOOD_TEST_RESULTS_RECEIVED = Counter('blood_test_results_received', 'Number of blood test results received')
+POSITIVE_AKI_PREDICTIONS = Counter('positive_aki_predictions', 'Number of positive AKI predictions')
+UNSUCCESSFUL_PAGER_REQUESTS = Counter('unsuccessful_pager_requests', 'Number of unsuccessful pager HTTP requests')
+MLLP_SOCKET_RECONNECTIONS = Counter('mllp_socket_reconnections', 'Number of reconnections to the MLLP socket')
+BLOOD_TEST_RESULT_DISTRIBUTION = Histogram('blood_test_result_distribution', 'Distribution of blood test result values')
 
 # Global event to signal threads when to exit, used for graceful shutdown.
 stop_event = threading.Event()
@@ -198,8 +203,13 @@ def examine_message(message: list[str], df: pd.DataFrame, model) -> str | None:
     # Process LIMS (test result) for creatinine.
     if message[0].split("|")[8] == "ORU^R01" and \
             message[3].split("|")[3] == "CREATININE":
+                
+        BLOOD_TEST_RESULTS_RECEIVED.inc()  # Increment blood test result counter
         mrn = message[1].split("|")[3]
+        
         creatinine_result = float(message[3].split("|")[5])
+        
+        BLOOD_TEST_RESULT_DISTRIBUTION.observe(creatinine_result)  # Update histogram with new test result
 
         if df.loc[mrn, ['test_1', 'test_2', 'test_3', 'test_4', 'test_5']]\
                 .isnull().any():
@@ -217,7 +227,12 @@ def examine_message(message: list[str], df: pd.DataFrame, model) -> str | None:
         # Use the model to predict AKI based on updated test results.
         features = df.loc[mrn].to_numpy().reshape(1, -1)
         aki = model.predict(features)
-        return mrn if aki else None
+        
+        if aki:
+            POSITIVE_AKI_PREDICTIONS.inc() # Increment positive AKI prediction counter
+            return mrn
+        else:
+            return None
 
     # Process PAS (admission message) to update demographic info.
     elif message[0].split("|")[8] == "ADT^A01":
@@ -295,6 +310,9 @@ def processor(address: str, model, df: pd.DataFrame) -> None:
                 if mrn:
                     r = urllib.request.urlopen(f"http://{address}/page",
                                                data=mrn.encode('utf-8'))
+                    if r.status != 200:
+                        UNSUCCESSFUL_PAGER_REQUESTS.inc() # Increment counter for unsuccessful pager requests
+                        
                 # When the process ends, inform message_receiver to acknowledge
                 lock.acquire()
                 try:
@@ -329,6 +347,7 @@ def message_receiver(address: tuple[str, int]) -> None:
             while not stop_event.is_set():
                 buffer = s.recv(1024)
                 if len(buffer) == 0:
+                    MLLP_SOCKET_RECONNECTIONS.inc()  # Increment MLLP socket reconnection counter
                     continue
                 message = from_mllp(buffer)
 
