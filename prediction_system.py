@@ -11,6 +11,11 @@ from datetime import datetime
 import pickle
 import warnings
 import argparse
+import sqlite3
+import csv
+import statistics
+from sqlite3 import Error
+import numpy as np
 
 
 # Global event to signal threads when to exit, used for graceful shutdown.
@@ -28,10 +33,7 @@ MLLP_END_OF_BLOCK = 0x1c
 MLLP_CARRIAGE_RETURN = 0x0d 
 
 # Shared state for message processing and acknowledgment signaling.
-global messages, send_ack, pending_predictions
-
-# Initialising pending flag in case LIMS is received but age & sex are missing
-pending_predictions = []
+global messages, send_ack
 
 # Model for processing messages. Load with appropriate model before use.
 model = None
@@ -81,189 +83,6 @@ def to_mllp(segments: list[str]) -> bytes:
     return m
 
 
-def preload_history(pathname: str = 'data/history.csv') -> pd.DataFrame:
-    """Loads historical patient data from a CSV file into a pandas DataFrame.
-
-    This function processes a specified CSV file to extract patient identifiers
-    (MRN: Medical Record Number) along with demographic information (age and
-    sex, if available), and up to five most recent creatinine test results. It
-    ensures data uniformity by filling in missing values as needed.
-
-    Args:
-        pathname (str): The file path to the CSV file containing historical
-                        patient data. Defaults to 'data/history.csv'.
-
-    Returns:
-        pd.DataFrame: A DataFrame indexed by MRN with columns for age, sex, and
-                      the five most recent creatinine test results for each
-                      patient. Columns include age and sex (if available), and
-                      creatinine test results are ordered from most recent
-                      (test_1) to least recent (test_5).
-
-    Note:
-        - This function assumes the CSV file has a specific format, with the
-          MRN as the first column, followed by optional demographic
-          information, and creatinine test results.
-        - Missing creatinine test results for patients with fewer than five
-          records are filled with the mean of their available test results.
-          If a patient has more than five test results, only the five most
-          recent are kept.
-    """
-    with open(pathname, 'r') as file:
-        
-        count = 0
-        file = csv.reader(file)
-        
-        all_mrns = []
-        all_constants = []
-        all_results = []
-        
-        for row in file:
-            # Skip header row and start data extraction.
-            if count == 0:
-                count += 1
-                print('Starting to extract data...')
-                continue
-
-            # Filter out empty fields from the row.
-            cleaned_row = [value for value in row if value != '']
-            
-            mrn = cleaned_row[0]
-            age = None
-            sex = None
-
-            # Order creatinine test results, most recent first.
-            constants = [age, sex]
-            test_results = list(map(float, cleaned_row[2::2]))
-            test_results.reverse()
-
-            all_mrns.append(mrn)
-            all_constants.append(constants)
-            all_results.append(test_results)
-                
-        print(f'Extraction finished.\n')
-
-    # Specify the number of tests per patient to input the model
-    required_number_of_tests = 5
-
-    all_results_processed = all_results.copy()
-
-    print('Starting to process extracted data...')
-    for row in range(len(all_results_processed)):
-        current_number_of_tests = len(all_results_processed[row])
-        if current_number_of_tests < required_number_of_tests:
-            mean_value = statistics.mean(all_results_processed[row])
-            all_results_processed[row].extend(
-                [mean_value]*(required_number_of_tests-current_number_of_tests)
-            )
-        elif current_number_of_tests > required_number_of_tests:
-            all_results_processed[row] = all_results_processed[row][:5]
-
-    print(f'Processing finished.\n')
-
-    # Merge demographic info with test results.
-    processed_data = []
-    for constants, results in zip(all_constants, all_results_processed):
-        processed_data.append(constants + results)
-
-    column_names = ['age', 'sex'] + \
-                   [f'test_{i}' for i in range(1, required_number_of_tests+1)]
-    df = pd.DataFrame(processed_data, columns=[column_names], index=all_mrns)
-    
-    return df
-
-
-def examine_message(message: list[str], df: pd.DataFrame, model) -> str | None:
-    """Examines an HL7 message for patient data updates or AKI prediction.
-
-    This function handles HL7 messages, updating the patient database with
-    demographic information from ADT^A01 (PAS Admission) messages, or
-    creatinine test results from ORU^R01 (LIMS) messages.
-    For creatinine updates, it may trigger a prediction for acute kidney injury
-    (AKI) using the provided pretrained machine learning model.
-
-    Args:
-        message (list[str]): The HL7 message split into string segments.
-        df (pd.DataFrame): The current patient database.
-        model: A pretrained machine learning model for predicting AKI based on
-               patient age, sex, and test results.
-
-    Returns:
-        Optional[str]: The MRN of a patient if an AKI prediction is positive;
-                       otherwise, None.
-
-    Note:
-        Assumes messages always conform to their expected format, being valid
-        LIMS and PAS messages.
-    """
-    global pending_predictions
-
-    try:
-        message_type = message[0].split("|")[8]
-        mrn = message[1].split("|")[3]
-        if not mrn.isdigit():
-            return None
-
-        if mrn not in df.index:
-            df.loc[mrn] = [None] * len(df.columns)
-
-        # Process LIMS (test result) for creatinine.
-        if message_type == "ORU^R01":
-            test_type = message[3].split("|")[3]
-            creatinine_result_str = message[3].split("|")[5]
-            if test_type != "CREATININE" or not \
-                    creatinine_result_str.replace('.', '', 1).isdigit():
-                return None
-            creatinine_result = float(creatinine_result_str)
-
-            # Check if this is the first test result for the MRN.
-            if df.loc[mrn, ['test_1', 'test_2', 'test_3', 'test_4', 'test_5']]\
-                    .isnull().any():
-                # initialise them with the current test result.
-                df.loc[mrn, ['test_1', 'test_2', 'test_3', 'test_4', 'test_5']]\
-                    = [creatinine_result] * 5
-            else:
-                # Shift existing results to make room for new one at 'test_1'.
-                df.loc[mrn, 'test_2':'test_5'] = \
-                    df.loc[mrn, 'test_1':'test_4'].values
-                df.at[mrn, 'test_1'] = creatinine_result
-
-            # Check if age and sex are present before making a prediction
-            if not pd.isnull(df.at[mrn, 'age']) and \
-                    not pd.isnull(df.at[mrn, 'sex']):
-                features = df.loc[mrn].to_numpy().reshape(1, -1)
-                aki = model.predict(features)
-                return mrn if aki else None
-            else:
-                pending_predictions.append(mrn)
-                return None
-
-        # Process PAS (admission/discharge message) to update demographic info.
-        elif message_type in ["ADT^A01", "ADT^A03"]:
-            date_of_birth = message[1].split("|")[7]
-            sex = message[1].split("|")[8]
-            if not is_valid_dob(date_of_birth) or sex not in ["F", "M"]:
-                return None
-
-            age = calculate_age(date_of_birth)
-            df.at[mrn, 'age'] = age
-            sex_bin = 1 if sex == "F" else 0
-            df.at[mrn, 'sex'] = sex_bin
-
-            # Check for pending predictions now that demographic info is updated
-            if mrn in pending_predictions:
-                features = df.loc[mrn].to_numpy().reshape(1, -1)
-                aki = model.predict(features)
-                pending_predictions.remove(mrn)
-                return mrn if aki else None
-            return None
-
-    except IndexError as e:
-        # Catch indexing errors indicating invalid message formats
-        print(f"Error processing message: {e}")
-        return None
-
-
 def calculate_age(dob: str) -> int:
     """Calculates a person's age in years based on their date of birth.
 
@@ -276,7 +95,10 @@ def calculate_age(dob: str) -> int:
     Returns:
         int: The calculated age in years.
     """
-    dob_datetime = datetime.strptime(dob, "%Y%m%d")
+    dob_format = "%Y%m%d"
+
+    dob_datetime = datetime.strptime(dob, dob_format)
+
     current_datetime = datetime.now()
 
     age = current_datetime.year - dob_datetime.year - (
@@ -284,22 +106,6 @@ def calculate_age(dob: str) -> int:
             (dob_datetime.month, dob_datetime.day))
 
     return age
-
-
-def is_valid_dob(dob: str) -> bool:
-    """Check if the date of birth is in the correct format "%Y%m%d".
-
-    Args:
-        dob (str): The date of birth.
-
-    Returns:
-        bool: True if dob is in the "%Y%m%d" format, False otherwise.
-    """
-    try:
-        datetime.strptime(dob, "%Y%m%d")
-        return True
-    except ValueError:
-        return False
 
 
 def processor(address: str, model, df: pd.DataFrame) -> None:
@@ -335,7 +141,8 @@ def processor(address: str, model, df: pd.DataFrame) -> None:
                 lock.release()
 
             if run_code == True:
-                mrn = examine_message(message, df, model)
+                # mrn = examine_message(message, df, model
+                mrn = examine_message_and_predict_aki(message,  db_path='my_database.db', model=model)
                 if mrn:
                     r = urllib.request.urlopen(f"http://{address}/page",
                                                data=mrn.encode('utf-8'))
@@ -349,6 +156,168 @@ def processor(address: str, model, df: pd.DataFrame) -> None:
 
     except Exception as e:
         print(f"An error occurred: {e}")
+
+
+def preload_history_to_sqlite(db_path='my_database.db', pathname='data/history.csv'):
+    """
+    Loads historical patient data from a specified CSV file and inserts it into an SQLite database.
+    
+    The function processes the CSV file, extracting patient identifiers (MRN) along with demographic 
+    information (age and sex, if available) and up to five most recent creatinine test results, 
+    filling in missing values as needed to ensure uniformity.
+    
+    Parameters:
+    - db_path (str): The file path to the SQLite database. Defaults to 'my_database.db'.
+    - pathname (str): The file path to the CSV file containing historical patient data.
+                      Defaults to 'data/history.csv'.
+    """
+    
+    # Connect to the SQLite database
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+    
+    # Create the table if it doesn't exist
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS patient_history (
+            mrn TEXT PRIMARY KEY,
+            age INTEGER,
+            sex INTEGER,
+            test_1 REAL,
+            test_2 REAL,
+            test_3 REAL,
+            test_4 REAL,
+            test_5 REAL
+        )
+    ''')
+    
+    with open(pathname, 'r') as file:
+        file = csv.reader(file)
+        next(file)  # Skip the header row
+        
+        for row in file:
+            cleaned_row = [value for value in row if value != '']
+            
+            mrn = cleaned_row[0]
+            age = None
+            sex = None
+            test_results = list(map(float, cleaned_row[2::2]))
+            test_results.reverse()  # Reverse to get the most recent tests first
+            
+            # Ensure exactly 5 test results per patient
+            while len(test_results) < 5:
+                test_results.append(statistics.mean(test_results))  # Fill with mean
+            test_results = test_results[:5]  # Ensure no more than 5 results
+            
+            # Insert data into the database
+            c.execute('''
+                INSERT INTO patient_history (mrn, age, sex, test_1, test_2, test_3, test_4, test_5)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(mrn) DO UPDATE SET
+                age=excluded.age,
+                sex=excluded.sex,
+                test_1=excluded.test_1,
+                test_2=excluded.test_2,
+                test_3=excluded.test_3,
+                test_4=excluded.test_4,
+                test_5=excluded.test_5
+            ''', (mrn, age, sex, *test_results))
+    
+    # Commit the changes and close the connection
+    conn.commit()
+    conn.close()
+
+    print("Data preloaded into SQLite database successfully.")
+
+def fill_none(data):
+    # Copy the list to avoid modifying the original data
+    filled_data = data.copy()
+    # Find the rightmost non-None value starting from index 2
+    for i in range(len(filled_data) - 1, 1, -1):
+        if filled_data[i] is not None:
+            rightmost_non_none = filled_data[i]
+            break
+    else:
+        # If all values from index 2 onwards are None, use the value at index 2
+        rightmost_non_none = filled_data[2]
+    
+    # Fill None values with the rightmost non-None value found
+    for i in range(2, len(filled_data)):
+        if filled_data[i] is None:
+            filled_data[i] = rightmost_non_none
+    
+    return filled_data
+
+def examine_message_and_predict_aki(message, db_path, model):
+    """
+    Examines an HL7 message, updating the patient database or making a prediction based on the
+    message content using an SQLite database. If an AKI prediction is made, updates the test
+    results in the database, shifting older readings.
+    
+    Parameters:
+    - message (list of str): The HL7 message split into segments.
+    - db_path (str): Path to the SQLite database.
+    - model: A trained machine learning model for predicting AKI.
+    """
+    try:
+        conn = sqlite3.connect(db_path)
+        c = conn.cursor()
+
+        if message[0].split("|")[8] == "ORU^R01":
+            if message[3].split("|")[3] == "CREATININE":
+                mrn = message[1].split("|")[3]
+                creatinine_result = float(message[3].split("|")[5])
+
+                # Fetch current test results for the MRN
+                c.execute("""SELECT age, sex, test_1, test_2, test_3, test_4, test_5 FROM patient_history WHERE mrn=?""", (mrn,))
+                row = c.fetchone()
+                if row:
+                    # Prepare data for prediction
+                    current_tests = np.array(row)
+                    c.execute("""UPDATE patient_history
+                            SET test_5=test_4, test_4=test_3, test_3=test_2, test_2=test_1, test_1=?
+                            WHERE mrn=?""", (creatinine_result, mrn)) #Check this
+
+                    current_tests_np = np.insert(current_tests, 2, float(creatinine_result))
+                    current_tests_np = fill_none(current_tests_np)
+                    current_tests_np = current_tests_np[:-1]
+                    current_tests_np = current_tests_np.reshape(1, -1)
+                    aki_prediction = model.predict(current_tests_np)  # Assume this returns 1 for AKI, 0 otherwise
+                    # Update database with new test result and shift older readings
+                    return mrn if aki_prediction else None
+                else:
+                    # If no existing records, insert new
+                    c.execute("""INSERT INTO patient_history (mrn, test_1, test_2, test_3, test_4, test_5)
+                                 VALUES (?, ?, ?, ?, ?, ?)""", (mrn, creatinine_result, creatinine_result, creatinine_result, creatinine_result, creatinine_result))
+
+        elif message[0].split("|")[8] == "ADT^A01":
+            mrn = message[1].split("|")[3]
+            # Extract and calculate age, update database
+            dob = message[1].split("|")[7]
+            age = calculate_age(dob)  # Implement calculate_age based on your requirements
+            # Extract sex and update database
+            sex = message[1].split("|")[8]
+            sex_bin = 1 if sex == "F" else 0
+
+            c.execute("""SELECT age, sex, test_1, test_2, test_3, test_4, test_5 FROM patient_history WHERE mrn=?""", (mrn,))
+            row = c.fetchone()
+            
+            # Update or insert demographic information
+            c.execute("""INSERT INTO patient_history (mrn, age, sex) VALUES (?, ?, ?)
+                         ON CONFLICT(mrn) DO UPDATE SET age=excluded.age, sex=excluded.sex""",
+                      (mrn, age, sex_bin))
+            
+            # Test by Carlos
+            c.execute("""SELECT age, sex, test_1, test_2, test_3, test_4, test_5 FROM patient_history WHERE mrn=?""", (mrn,))
+            row = c.fetchone()
+        conn.commit()
+
+    except Error as e:
+        print(f"Database error: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+    return None
 
 
 def message_receiver(address: tuple[str, int]) -> None:
@@ -436,8 +405,9 @@ def main() -> None:
         else:
             pager_address = "localhost:8441"
 
-        database = preload_history(pathname=flags.pathname)
-        
+        # database = preload_history(pathname=flags.pathname)
+        database = preload_history_to_sqlite(pathname=flags.pathname)
+
         with open("trained_model.pkl", "rb") as file:
             model = pickle.load(file)
 
