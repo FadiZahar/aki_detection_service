@@ -16,7 +16,14 @@ import csv
 import statistics
 from sqlite3 import Error
 import numpy as np
+import logging
 
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 # Global event to signal threads when to exit, used for graceful shutdown.
 stop_event = threading.Event()
@@ -33,7 +40,10 @@ MLLP_END_OF_BLOCK = 0x1c
 MLLP_CARRIAGE_RETURN = 0x0d 
 
 # Shared state for message processing and acknowledgment signaling.
-global messages, send_ack
+global messages, send_ack, pending_predictions
+
+# Initialising pending flag in case LIMS is received but age & sex are missing
+pending_predictions = []
 
 # Model for processing messages. Load with appropriate model before use.
 model = None
@@ -246,6 +256,7 @@ def fill_none(data):
             filled_data[i] = rightmost_non_none
     
     return filled_data
+
 
 def examine_message_and_predict_aki(message, db_path, model):
     """
