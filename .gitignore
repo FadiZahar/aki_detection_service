@@ -2,4 +2,4 @@ __pycache__
 venv/
 swemls_venv
 .idea
-my_database.db
+my_database.db*
