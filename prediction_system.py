@@ -4,7 +4,6 @@ import time
 import urllib.error
 import urllib.request
 import threading
-import pandas as pd
 import csv
 import statistics
 from datetime import datetime
@@ -414,13 +413,14 @@ def main() -> None:
         Expects environment variables 'MLLP_ADDRESS' and 'PAGER_ADDRESS' for
         configuring the addresses of the MLLP and pager services, respectively.
     """
+    print("Hola perroooos")
     try:
         warnings.filterwarnings("ignore")
-
+        print("La mano arriba")
         parser = argparse.ArgumentParser()
         parser.add_argument("--pathname", default="/hospital-history/history.csv")
         flags = parser.parse_args()
-
+        print("cintura sola")
         if 'MLLP_ADDRESS' in os.environ:
             mllp_address = os.environ['MLLP_ADDRESS']
             hostname, port_str = mllp_address.split(':')
@@ -429,19 +429,22 @@ def main() -> None:
             print("MLLP_ADDRESS is set: ", mllp_address)
         else:
             mllp_address = ("localhost", 8440)
-
+        print("da media vuelta")
         if 'PAGER_ADDRESS' in os.environ:
             pager_address = os.environ['PAGER_ADDRESS']
             print("PAGER_ADDRESS is set: ", pager_address)
         else:
             pager_address = "localhost:8441"
-
+        print("danza cuduro")
         # Check if the database file already exists
         db_path = 'my_database.db'
+        print("Hello world")
         if os.path.exists(db_path):
+            print("Hello 1")
             print(f"The database file '{db_path}' already exists.")
             # You may choose to exit here or perform any other action as needed
         else:
+            print("Hello 2")
             print(f"The database file '{db_path}' does not exist, proceeding to create it.")
             preload_history_to_sqlite(db_path=db_path, pathname=flags.pathname)
 
