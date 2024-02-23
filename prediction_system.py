@@ -127,7 +127,7 @@ def calculate_age(dob: str) -> int:
     return age
 
 
-def processor(address: str, model, df: pd.DataFrame) -> None:
+def processor(address: str, model) -> None:
     """Processes messages, updates database or makes predictions, and sends
     notifications.
 
@@ -436,8 +436,15 @@ def main() -> None:
         else:
             pager_address = "localhost:8441"
 
-        # database = preload_history(pathname=flags.pathname)
-        database = preload_history_to_sqlite(pathname=flags.pathname)
+        # Check if the database file already exists
+        db_path = 'my_database.db'
+        if os.path.exists(db_path):
+            print(f"The database file '{db_path}' already exists.")
+            # You may choose to exit here or perform any other action as needed
+        else:
+            print(f"The database file '{db_path}' does not exist, proceeding to create it.")
+            preload_history_to_sqlite(db_path=db_path, pathname=flags.pathname)
+
 
         with open("trained_model.pkl", "rb") as file:
             model = pickle.load(file)
@@ -448,8 +455,7 @@ def main() -> None:
 
         t1 = threading.Thread(target=lambda: message_receiver(mllp_address),
                               daemon=True)
-        t2 = threading.Thread(target=lambda: processor(pager_address, model,
-                                                       database), daemon=True)
+        t2 = threading.Thread(target=lambda: processor(pager_address, model), daemon=True)
         t1.start()
         t2.start()
 
