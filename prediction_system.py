@@ -423,6 +423,7 @@ def main() -> None:
         print("La mano arriba")
         parser = argparse.ArgumentParser()
         parser.add_argument("--pathname", default="/hospital-history/history.csv")
+        parser.add_argument("--db_path", default="/state/my_database.db")
         flags = parser.parse_args()
         print("cintura sola")
         if 'MLLP_ADDRESS' in os.environ:
@@ -441,16 +442,16 @@ def main() -> None:
             pager_address = "localhost:8441"
         print("danza cuduro")
         # Check if the database file already exists
-        db_path = 'my_database.db'
+        # db_path = 'my_database.db'
         print("Hello world")
-        if os.path.exists(db_path):
+        if os.path.exists(flags.db_path):
             print("Hello 1")
-            print(f"The database file '{db_path}' already exists.")
+            print(f"The database file '{flags.db_path}' already exists.")
             # You may choose to exit here or perform any other action as needed
         else:
             print("Hello 2")
-            print(f"The database file '{db_path}' does not exist, proceeding to create it.")
-            preload_history_to_sqlite(db_path=db_path, pathname=flags.pathname)
+            print(f"The database file '{flags.db_path}' does not exist, proceeding to create it.")
+            preload_history_to_sqlite(db_path=flags.db_path, pathname=flags.pathname)
 
 
         with open("trained_model.pkl", "rb") as file:

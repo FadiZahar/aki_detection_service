@@ -8,6 +8,9 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -yq \
     dos2unix \
     && rm -rf /var/lib/apt/lists/*
 
+# Create the /state directory for the SQLite database
+RUN mkdir -p /state && chmod 777 /state
+
 # Set the working directory to /simulator
 WORKDIR /simulator
 
@@ -32,4 +35,6 @@ RUN python3 test_prediction_system.py
 ENV PYTHONUNBUFFERED=1
 
 # Command to run the prediction system. Ensure this matches your application's needs.
-CMD ["python3", "prediction_system.py", "--pathname=/hospital-history/history.csv"]
+CMD ["python3", "prediction_system.py", "--pathname=/hospital-history/history.csv", "--db_path=/state/my_database.db"]
+
+
