@@ -307,7 +307,7 @@ def examine_message_and_predict_aki(message, db_path, model):
                     current_tests_np = current_tests_np.reshape(1, -1)
                     aki_prediction = model.predict(current_tests_np)  # Assume this returns 1 for AKI, 0 otherwise
                     # Update database with new test result and shift older readings
-                    if aki:
+                    if aki_prediction:
                         POSITIVE_AKI_PREDICTIONS.inc() # Increment positive AKI prediction counter
                         return mrn
                     else:
@@ -474,4 +474,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    start_http_server(8000)
     main()
