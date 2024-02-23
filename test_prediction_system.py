@@ -30,25 +30,25 @@ class TestExamineMessageModel(unittest.TestCase):
             "MSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||20240331003200||ORU^R01|||2.5",
             "PID|1||640400",
             "OBR|1||||||20240331003200",
-            "OBX|1|SN|CREATININE||127.5695463720204"
+            "OBX|1|SN|CREATININE||127.57"
         ]
+        df_test = self.df.copy()
+        mrn = examine_message(creatinine_message_example, df_test, self.model)
 
-        mrn = examine_message(creatinine_message_example, self.df, self.model)
-
-        # Assert MRN is not returned for negative AKI prediction
+        # Assert MRN is not returned for negative AKI prediction (like in this case)
         self.assertIsNone(mrn, "MRN should not be returned for negative AKI prediction")
 
-        # Assert the DataFrame is updated with the new creatinine test result
-        updated_test_1 = self.df.loc["640400", "test_1"]
-        self.assertAlmostEqual(updated_test_1, 127.5695463720204, places=5, msg="Creatinine result should be updated")
+        updated_tests = [127.57, 107.66, 116.58, 85.98, 100.95]
+        self.assertEqual(updated_tests, list(df_test.loc["640400", ['test_1', 'test_2', 'test_3', 'test_4', 'test_5']]),
+                         "Test results have not been updated and shifted properly")
 
     def test_examine_message_admit(self):
         admit_message_example = [
             "MSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||20240328132400||ADT^A01|||2.5",
             "PID|1||755374||AYAT BURKE||19940216|F"
         ]
-
-        result = examine_message(admit_message_example, self.df, self.model)
+        df_test = self.df.copy()
+        result = examine_message(admit_message_example, df_test, self.model)
 
         # Assert no MRN is returned for admit message
         self.assertIsNone(result, "No MRN should be returned for admit message")
@@ -56,10 +56,10 @@ class TestExamineMessageModel(unittest.TestCase):
         # Assert age and sex are updated correctly
         dob = "19940216"
         expected_age = calculate_age(dob)
-        actual_age = self.df.loc["755374", "age"]
+        actual_age = df_test.loc["755374", "age"]
         self.assertEqual(actual_age, expected_age, "Age should be updated in the DataFrame")
 
-        actual_sex = self.df.loc["755374", "sex"]
+        actual_sex = df_test.loc["755374", "sex"]
         self.assertEqual(actual_sex, 1, "Sex should be updated in the DataFrame")
 
     def test_examine_message_discharge(self):
@@ -67,19 +67,19 @@ class TestExamineMessageModel(unittest.TestCase):
             "MSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||20240601162800||ADT^A03|||2.5",
             "PID|1||521399"
         ]
-
+        df_test = self.df.copy()
         # Process the discharge message
-        mrn = examine_message(discharge_message_example, self.df, self.model)
+        mrn = examine_message(discharge_message_example, df_test, self.model)
 
         # Assert that no MRN is returned for a discharge message
         self.assertIsNone(mrn, "MRN should not be returned for a discharge message")
 
         # Assert that the new MRN is added with expected default or NaN values
-        self.assertIn("521399", self.df.index, "New MRN should be added to the DataFrame for a discharge message")
+        self.assertIn("521399", df_test.index, "New MRN should be added to the DataFrame for a discharge message")
 
         # Manually check each value in the row for the new MRN
-        for col in self.df.columns:
-            cell_value = self.df.at["521399", col]
+        for col in df_test.columns:
+            cell_value = df_test.at["521399", col]
             self.assertTrue(pd.isnull(cell_value), f"Value in column '{col}' for new MRN should be NaN or None")
 
     def test_new_patient_entry_creation(self):
@@ -88,14 +88,14 @@ class TestExamineMessageModel(unittest.TestCase):
             "MSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||20240328132400||ADT^A01|||2.5",
             "PID|1||999999||DOE JOHN||19880101|M"
         ]
-
-        _ = examine_message(new_patient_admit_message, self.df, self.model)
-        self.assertIn("999999", self.df.index, "New patient MRN should be added to the DataFrame")
-        self.assertTrue(pd.isnull(self.df.loc["999999", ["test_1", "test_2", "test_3", "test_4", "test_5"]]).all(),
+        df_test = self.df.copy()
+        _ = examine_message(new_patient_admit_message, df_test, self.model)
+        self.assertIn("999999", df_test.index, "New patient MRN should be added to the DataFrame")
+        self.assertTrue(pd.isnull(df_test.loc["999999", ["test_1", "test_2", "test_3", "test_4", "test_5"]]).all(),
                         "Test columns should be initialized with NaN for new patient")
-        self.assertEqual(self.df.loc["999999", "age"], calculate_age("19880101"),
+        self.assertEqual(df_test.loc["999999", "age"], calculate_age("19880101"),
                          "Age should be correctly set for new patient")
-        self.assertEqual(self.df.loc["999999", "sex"], 0, "Sex should be correctly set for new patient as male (0)")
+        self.assertEqual(df_test.loc["999999", "sex"], 0, "Sex should be correctly set for new patient as male (0)")
 
     def test_update_new_patient_with_creatinine(self):
         # Assume the new patient now has a creatinine test result
@@ -105,10 +105,10 @@ class TestExamineMessageModel(unittest.TestCase):
             "OBR|1||||||20240331003200",
             "OBX|1|SN|CREATININE||200"
         ]
-
-        _ = examine_message(creatinine_message_new_patient, self.df, self.model)
+        df_test = self.df.copy()
+        _ = examine_message(creatinine_message_new_patient, df_test, self.model)
         for column in ["test_1", "test_2", "test_3", "test_4", "test_5"]:
-            self.assertEqual(self.df.loc["999999", column], 200,
+            self.assertEqual(df_test.loc["999999", column], 200,
                              f"{column} should be populated with creatinine result 200 for new patient")
 
     def test_ignore_non_creatinine_result(self):
@@ -119,16 +119,16 @@ class TestExamineMessageModel(unittest.TestCase):
             "OBR|1||||||20240331003200",
             "OBX|1|SN|GLUCOSE||100"
         ]
-
+        df_test = self.df.copy()
         # Process the non-creatinine message
-        _ = examine_message(non_creatinine_message, self.df, self.model)
+        _ = examine_message(non_creatinine_message, df_test, self.model)
 
         # Assert that the new MRN "999999" is added to the DataFrame
-        self.assertIn("555555", self.df.index, "New MRN should be added to the DataFrame for a non-creatinine message")
+        self.assertIn("555555", df_test.index, "New MRN should be added to the DataFrame for a non-creatinine message")
 
         # Manually check each value in the row for the new MRN "999999"
-        for col in self.df.columns:
-            cell_value = self.df.at["555555", col]
+        for col in df_test.columns:
+            cell_value = df_test.at["555555", col]
             self.assertTrue(pd.isnull(cell_value),
                             f"Value in column '{col}' for new MRN '555555' should be NaN or None")
 
@@ -140,8 +140,8 @@ class TestExamineMessageModel(unittest.TestCase):
             "OBR|1||||||20240331003200",
             "OBX|1|SN|CREATININE||300"  # Assuming this level of creatinine indicates AKI
         ]
-
-        mrn = examine_message(high_creatinine_message, self.df, self.model)
+        df_test = self.df.copy()
+        mrn = examine_message(high_creatinine_message, df_test, self.model)
         self.assertIsNotNone(mrn, "MRN should be returned for positive AKI prediction due to high creatinine level")
         self.assertEqual(mrn, "640400", "MRN of the patient with high creatinine level should be returned")
 
