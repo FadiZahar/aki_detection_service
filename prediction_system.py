@@ -11,7 +11,14 @@ from datetime import datetime
 import pickle
 import warnings
 import argparse
+import logging
 
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 # Global event to signal threads when to exit, used for graceful shutdown.
 stop_event = threading.Event()
@@ -201,7 +208,12 @@ def examine_message(message: list[str], df: pd.DataFrame, model) -> str | None:
     try:
         message_type = message[0].split("|")[8]
         mrn = message[1].split("|")[3]
+        timestamp = message[0].split("|")[6]
+        msg_identifier = f"[MRN: {mrn} " \
+                         f"\nmessage_type <{message_type}>" \
+                         f"\ntimestamp: {timestamp}]"
         if not mrn.isdigit():
+            logging.error(f"Invalid MRN format: {mrn}")
             return None
 
         if mrn not in df.index:
@@ -213,6 +225,9 @@ def examine_message(message: list[str], df: pd.DataFrame, model) -> str | None:
             creatinine_result_str = message[3].split("|")[5]
             if test_type != "CREATININE" or not \
                     creatinine_result_str.replace('.', '', 1).isdigit():
+                logging.error(f"{msg_identifier}\n>> Invalid test result format:"
+                              f" test_type: {test_type}, "
+                              f"with result: {creatinine_result_str}")
                 return None
             creatinine_result = float(creatinine_result_str)
 
@@ -229,8 +244,7 @@ def examine_message(message: list[str], df: pd.DataFrame, model) -> str | None:
                 df.at[mrn, 'test_1'] = creatinine_result
 
             # Check if age and sex are present before making a prediction
-            if not pd.isnull(df.at[mrn, 'age']) and \
-                    not pd.isnull(df.at[mrn, 'sex']):
+            if not df.loc[mrn, ['age', 'sex']].isnull().any():
                 features = df.loc[mrn].to_numpy().reshape(1, -1)
                 aki = model.predict(features)
                 return mrn if aki else None
@@ -239,10 +253,15 @@ def examine_message(message: list[str], df: pd.DataFrame, model) -> str | None:
                 return None
 
         # Process PAS (admission/discharge message) to update demographic info.
-        elif message_type in ["ADT^A01", "ADT^A03"]:
+        elif message_type == "ADT^A01":
             date_of_birth = message[1].split("|")[7]
+            if not is_valid_dob(date_of_birth):
+                logging.error(f"{msg_identifier}\n>> Invalid DOB format: "
+                              f"{date_of_birth}")
+                return None
             sex = message[1].split("|")[8]
-            if not is_valid_dob(date_of_birth) or sex not in ["F", "M"]:
+            if sex not in ["F", "M"]:
+                logging.error(f"{msg_identifier}\n>> Invalid sex value: {sex}")
                 return None
 
             age = calculate_age(date_of_birth)
@@ -259,8 +278,13 @@ def examine_message(message: list[str], df: pd.DataFrame, model) -> str | None:
             return None
 
     except IndexError as e:
-        # Catch indexing errors indicating invalid message formats
-        print(f"Error processing message: {e}")
+        # Catch indexing errors
+        logging.error(f"Error processing message due to invalid message format:"
+                      f" {e}")
+        return None
+    except Exception as e:
+        # Catch-all for unforeseen errors.
+        logging.error(f"An unexpected error occurred: {e}")
         return None
 
 
