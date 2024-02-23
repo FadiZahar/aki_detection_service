@@ -17,7 +17,16 @@ import statistics
 from sqlite3 import Error
 import numpy as np
 import logging
+from prometheus_client import Counter, start_http_server, Histogram
 
+# Prometheus Counters
+MESSAGES_RECEIVED = Counter('messages_received', 'Number of messages received')
+MESSAGES_PROCESSED = Counter('messages_processed', 'Number of messages processed')
+BLOOD_TEST_RESULTS_RECEIVED = Counter('blood_test_results_received', 'Number of blood test results received')
+POSITIVE_AKI_PREDICTIONS = Counter('positive_aki_predictions', 'Number of positive AKI predictions')
+UNSUCCESSFUL_PAGER_REQUESTS = Counter('unsuccessful_pager_requests', 'Number of unsuccessful pager HTTP requests')
+MLLP_SOCKET_RECONNECTIONS = Counter('mllp_socket_reconnections', 'Number of reconnections to the MLLP socket')
+BLOOD_TEST_RESULT_DISTRIBUTION = Histogram('blood_test_result_distribution', 'Distribution of blood test result values')
 
 # Configure logging
 logging.basicConfig(
@@ -156,6 +165,8 @@ def processor(address: str, model, df: pd.DataFrame) -> None:
                 if mrn:
                     r = urllib.request.urlopen(f"http://{address}/page",
                                                data=mrn.encode('utf-8'))
+                    if r.status != 200:
+                            UNSUCCESSFUL_PAGER_REQUESTS.inc() # Increment counter for unsuccessful pager 
                 # When the process ends, inform message_receiver to acknowledge
                 lock.acquire()
                 try:
@@ -275,8 +286,10 @@ def examine_message_and_predict_aki(message, db_path, model):
 
         if message[0].split("|")[8] == "ORU^R01":
             if message[3].split("|")[3] == "CREATININE":
+                BLOOD_TEST_RESULTS_RECEIVED.inc()  # Increment blood test result counter
                 mrn = message[1].split("|")[3]
                 creatinine_result = float(message[3].split("|")[5])
+                BLOOD_TEST_RESULT_DISTRIBUTION.observe(creatinine_result)  # Update histogram with new test 
 
                 # Fetch current test results for the MRN
                 c.execute("""SELECT age, sex, test_1, test_2, test_3, test_4, test_5 FROM patient_history WHERE mrn=?""", (mrn,))
@@ -294,7 +307,11 @@ def examine_message_and_predict_aki(message, db_path, model):
                     current_tests_np = current_tests_np.reshape(1, -1)
                     aki_prediction = model.predict(current_tests_np)  # Assume this returns 1 for AKI, 0 otherwise
                     # Update database with new test result and shift older readings
-                    return mrn if aki_prediction else None
+                    if aki:
+                        POSITIVE_AKI_PREDICTIONS.inc() # Increment positive AKI prediction counter
+                        return mrn
+                    else:
+                        return None
                 else:
                     # If no existing records, insert new
                     c.execute("""INSERT INTO patient_history (mrn, test_1, test_2, test_3, test_4, test_5)
@@ -353,12 +370,14 @@ def message_receiver(address: tuple[str, int]) -> None:
             while not stop_event.is_set():
                 buffer = s.recv(1024)
                 if len(buffer) == 0:
+                    MLLP_SOCKET_RECONNECTIONS.inc()  # Increment MLLP socket reconnection counter
                     continue
                 message = from_mllp(buffer)
 
                 lock.acquire()
                 try:
                     messages.append(message)
+                    MESSAGES_RECEIVED.inc()  # Increment messages received counter
                 finally:
                     lock.release()
 
@@ -374,6 +393,7 @@ def message_receiver(address: tuple[str, int]) -> None:
                         lock.release()
                 ack = to_mllp(ACK)
                 s.sendall(ack)
+                MESSAGES_PROCESSED.inc()  # Increment messages processed counter
 
     except Exception as e:
         print(f"An error occurred: {e}") 
