@@ -232,6 +232,7 @@ def processor(address: str, model, db_path) -> None:
             try:
                 if len(messages) > 0:
                     message = messages.pop(0)
+                    messages_received.inc() # once received, increment the messages received counter
                     run_code = True
             finally:
                 lock.release()
@@ -248,6 +249,7 @@ def processor(address: str, model, db_path) -> None:
                 lock.acquire()
                 try:
                     send_ack = True
+                    messages_processed.inc() # once acknowledged, increment the messages processed counter
                 finally:
                     lock.release()
                 run_code = False
@@ -498,6 +500,14 @@ def main() -> None:
     """
     print("Hola perroooos")
     try:
+        # Initialise Prometheus metrics
+        messages_received = Counter("messages_received", "Number of messages received") # initialise messages received counter for metrics
+        messages_processed = Counter("messages_processed", "Number of messages processed") # initialise messages processed counter for metrics
+        
+        # Start the server to expose the metrics
+        start_http_server(8000)
+
+        
         warnings.filterwarnings("ignore")
         print("La mano arriba")
         parser = argparse.ArgumentParser()
