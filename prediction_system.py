@@ -21,25 +21,33 @@ import json
 
 # Define initialize or load counter states functions
 def initialize_or_load_counters():
-    try:
-        # Load saved counter states
+    
+    # Initialise gauges with no values
+    global MESSAGES_RECEIVED, MESSAGES_PROCESSED, BLOOD_TEST_RESULTS_RECEIVED
+    global POSITIVE_AKI_PREDICTIONS, UNSUCCESSFUL_PAGER_REQUESTS, MLLP_SOCKET_RECONNECTIONS
+    global POSITIVE_PREDICTION_RATE, BLOOD_TEST_RESULT_DISTRIBUTION
+    
+    MESSAGES_RECEIVED = Gauge('messages_received', 'Number of messages received')
+    MESSAGES_PROCESSED = Gauge('messages_processed', 'Number of messages processed')
+    BLOOD_TEST_RESULTS_RECEIVED = Gauge('blood_test_results_received', 'Number of blood test results received')
+    POSITIVE_AKI_PREDICTIONS = Gauge('positive_aki_predictions', 'Number of positive AKI predictions')
+    UNSUCCESSFUL_PAGER_REQUESTS = Gauge('unsuccessful_pager_requests', 'Number of unsuccessful pager HTTP requests')
+    MLLP_SOCKET_RECONNECTIONS = Gauge('mllp_socket_reconnections', 'Number of reconnections to the MLLP socket')
+    POSITIVE_PREDICTION_RATE = Gauge('positive_prediction_rate', 'Rate of positive AKI predictions')
+    
+    try: # Load saved counter states
         with open('state/counter_state.json', 'r') as f:
             counter_state = json.load(f)
 
-        # Create counters with loaded values or default values
-        global MESSAGES_RECEIVED, MESSAGES_PROCESSED, BLOOD_TEST_RESULTS_RECEIVED
-        global POSITIVE_AKI_PREDICTIONS, UNSUCCESSFUL_PAGER_REQUESTS, MLLP_SOCKET_RECONNECTIONS
-        global POSITIVE_PREDICTION_RATE, BLOOD_TEST_RESULT_DISTRIBUTION
+        print("Counter state file found, loading counters from file.")
 
-        MESSAGES_RECEIVED = Counter('messages_received', 'Number of messages received', initial_value=counter_state.get('messages_received', 0))
-        MESSAGES_PROCESSED = Counter('messages_processed', 'Number of messages processed', initial_value=counter_state.get('messages_processed', 0))
-        BLOOD_TEST_RESULTS_RECEIVED = Counter('blood_test_results_received', 'Number of blood test results received', initial_value=counter_state.get('blood_test_results_received', 0))
-        POSITIVE_AKI_PREDICTIONS = Counter('positive_aki_predictions', 'Number of positive AKI predictions', initial_value=counter_state.get('positive_aki_predictions', 0))
-        UNSUCCESSFUL_PAGER_REQUESTS = Counter('unsuccessful_pager_requests', 'Number of unsuccessful pager HTTP requests', initial_value=counter_state.get('unsuccessful_pager_requests', 0))
-        MLLP_SOCKET_RECONNECTIONS = Counter('mllp_socket_reconnections', 'Number of reconnections to the MLLP socket', initial_value=counter_state.get('mllp_socket_reconnections', 0))
-        
-        # Initialize the positive prediction rate gauge
-        POSITIVE_PREDICTION_RATE = Gauge('positive_prediction_rate', 'Rate of positive AKI predictions')
+        MESSAGES_RECEIVED.set(counter_state.get('messages_received', 0))
+        MESSAGES_PROCESSED.set(counter_state.get('messages_processed', 0))
+        BLOOD_TEST_RESULTS_RECEIVED.set(counter_state.get('blood_test_results_received', 0))
+        POSITIVE_AKI_PREDICTIONS.set(counter_state.get('positive_aki_predictions', 0))
+        UNSUCCESSFUL_PAGER_REQUESTS.set(counter_state.get('unsuccessful_pager_requests', 0))
+        MLLP_SOCKET_RECONNECTIONS.set(counter_state.get('mllp_socket_reconnections', 0))
+
         # Calculate and set the positive prediction rate based on the loaded values
         if MESSAGES_PROCESSED._value.get() > 0:  # Ensure division by zero is not possible
             rate = POSITIVE_AKI_PREDICTIONS._value.get() / MESSAGES_PROCESSED._value.get()
@@ -48,13 +56,7 @@ def initialize_or_load_counters():
 
     except FileNotFoundError:
         # Create new counters if the state file doesn't exist
-        MESSAGES_RECEIVED = Counter('messages_received', 'Number of messages received')
-        MESSAGES_PROCESSED = Counter('messages_processed', 'Number of messages processed')
-        BLOOD_TEST_RESULTS_RECEIVED = Counter('blood_test_results_received', 'Number of blood test results received')
-        POSITIVE_AKI_PREDICTIONS = Counter('positive_aki_predictions', 'Number of positive AKI predictions')
-        UNSUCCESSFUL_PAGER_REQUESTS = Counter('unsuccessful_pager_requests', 'Number of unsuccessful pager HTTP requests')
-        MLLP_SOCKET_RECONNECTIONS = Counter('mllp_socket_reconnections', 'Number of reconnections to the MLLP socket')
-        POSITIVE_PREDICTION_RATE = Gauge('positive_prediction_rate', 'Rate of positive AKI predictions')
+        print("No counter state file found, initializing counters at zero.")
         
     # TEMPORARY CODE, CHANGE TO REMEMBER THE HISTOGRAM INSTEAD OF INITIALISING AT ZERO FOR EVERY REBOOT
     BLOOD_TEST_RESULT_DISTRIBUTION = Histogram(
@@ -81,7 +83,7 @@ def save_counter_state():
     with open('state/counter_state.json', 'w') as f:
         json.dump(counter_state, f)
         
-    print("Great! Counter states saved to 'state/counter_state.json'.")
+    print("Counter states saved to 'state/counter_state.json'.")
 
 # Global gauge for positive prediction rate
 def update_positive_prediction_rate():
@@ -188,7 +190,7 @@ def calculate_age(dob: str) -> int:
     return age
 
 
-def processor(address: str, model) -> None:
+def processor(address: str, model, db_path) -> None:
     """Processes messages, updates database or makes predictions, and sends
     notifications.
 
@@ -222,7 +224,7 @@ def processor(address: str, model) -> None:
 
             if run_code == True:
                 # mrn = examine_message(message, df, model
-                mrn = examine_message_and_predict_aki(message,  db_path='my_database.db', model=model)
+                mrn = examine_message_and_predict_aki(message,  db_path=db_path, model=model)
                 if mrn:
                     r = urllib.request.urlopen(f"http://{address}/page",
                                                data=mrn.encode('utf-8'))
@@ -240,7 +242,7 @@ def processor(address: str, model) -> None:
         print(f"An error occurred: {e}")
 
 
-def preload_history_to_sqlite(db_path='/state/my_database.db', pathname='/hospital-history/history.csv'):
+def preload_history_to_sqlite(db_path='state/my_database.db', pathname='hospital-history/history.csv'):
     """
     Loads historical patient data from a specified CSV file and inserts it into an SQLite database.
     
@@ -482,8 +484,8 @@ def main() -> None:
         warnings.filterwarnings("ignore")
         print("La mano arriba")
         parser = argparse.ArgumentParser()
-        parser.add_argument("--pathname", default="/hospital-history/history.csv")
-        parser.add_argument("--db_path", default="/state/my_database.db")
+        parser.add_argument("--pathname", default="hospital-history/history.csv")
+        parser.add_argument("--db_path", default="state/my_database.db")
         flags = parser.parse_args()
         print("cintura sola")
         if 'MLLP_ADDRESS' in os.environ:
@@ -525,7 +527,7 @@ def main() -> None:
 
         t1 = threading.Thread(target=lambda: message_receiver(mllp_address),
                               daemon=True)
-        t2 = threading.Thread(target=lambda: processor(pager_address, model), daemon=True)
+        t2 = threading.Thread(target=lambda: processor(pager_address, model, db_path=flags.db_path), daemon=True)
         t1.start()
         t2.start()
 
