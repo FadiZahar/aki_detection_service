@@ -34,6 +34,10 @@ def initialize_or_load_counters():
     UNSUCCESSFUL_PAGER_REQUESTS = Gauge('unsuccessful_pager_requests', 'Number of unsuccessful pager HTTP requests')
     MLLP_SOCKET_RECONNECTIONS = Gauge('mllp_socket_reconnections', 'Number of reconnections to the MLLP socket')
     POSITIVE_PREDICTION_RATE = Gauge('positive_prediction_rate', 'Rate of positive AKI predictions')
+    BLOOD_TEST_RESULT_DISTRIBUTION = Histogram(
+        'blood_test_result_distribution',
+        'Distribution of blood test result values',
+        buckets=[0, 50, 100, 150, 200, 250, 300, float("inf")])
     
     try: # Load saved counter states
         with open('state/counter_state.json', 'r') as f:
@@ -53,17 +57,60 @@ def initialize_or_load_counters():
             rate = POSITIVE_AKI_PREDICTIONS._value.get() / MESSAGES_PROCESSED._value.get()
             POSITIVE_PREDICTION_RATE.set(rate)
             print("positive prediction rate set to: ", rate)
-
+        
     except FileNotFoundError:
         # Create new counters if the state file doesn't exist
         print("No counter state file found, initializing counters at zero.")
         
-    # TEMPORARY CODE, CHANGE TO REMEMBER THE HISTOGRAM INSTEAD OF INITIALISING AT ZERO FOR EVERY REBOOT
-    BLOOD_TEST_RESULT_DISTRIBUTION = Histogram(
-    'blood_test_result_distribution',
-    'Distribution of blood test result values',
-    buckets=[0, 50, 100, 150, 200, 250, 300, float("inf")]
-)
+    try:
+        # Recreate the histogram with the same configuration
+        load_histogram_state('histogram_state.json', BLOOD_TEST_RESULT_DISTRIBUTION)
+        print("Histogram buckets file found, loading histogram buckets from file.")
+    except:
+        print("No histogram buckets file found, initializing histogram with default buckets.")
+
+# Function to extract and save histogram bucket counts to a file
+def save_histogram_state(histogram, filename):
+    # Extract bucket counts
+    bucket_counts = [(float(bucket), count.get()) for bucket, (_, count) in zip(histogram._upper_bounds, histogram._buckets)]
+    histogram_data = {
+        "sum": histogram._sum.get(),
+        "count": histogram._count.get(),
+        "buckets": bucket_counts
+    }
+
+    # Save to JSON file
+    with open(filename, 'w') as f:
+        json.dump(histogram_data, f)
+
+# Function to load histogram bucket counts from a file
+def load_histogram_state(filename, histogram):
+    # Load from JSON file
+    with open(filename, 'r') as f:
+        histogram_data = json.load(f)
+
+    # Set the sum and count
+    histogram._sum.set(histogram_data["sum"])
+    histogram._count.set(histogram_data["count"])
+
+    # Set the bucket counts
+    for upper_bound, count in histogram_data["buckets"]:
+        bucket = next(b for b, bound in zip(histogram._buckets, histogram._upper_bounds) if bound == upper_bound)
+        bucket[1].set(count)
+
+# Function to recreate a histogram with loaded bucket counts
+def recreate_histogram(name, description, loaded_buckets):
+    # Define custom buckets based on loaded data
+    custom_buckets = list(loaded_buckets.keys())
+    histogram = Histogram(name, description, buckets=custom_buckets)
+
+    # Manually populate the histogram with loaded bucket counts
+    for bucket, count in loaded_buckets.items():
+        for _ in range(count):
+            histogram.observe(bucket)
+
+    return histogram
+
 
 # Define save counter states to a file function
 def save_counter_state():
@@ -549,8 +596,8 @@ def main() -> None:
         t1.join()
         t2.join()
         save_counter_state() # Save counter states before exiting
+        save_histogram_state(BLOOD_TEST_RESULT_DISTRIBUTION, 'state/histogram_buckets.pkl') # Save histogram buckets before exiting
         print("Program exited gracefully.")
-
 
 if __name__ == "__main__":
     start_http_server(8000)
