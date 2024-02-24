@@ -23,9 +23,9 @@ import json
 def initialize_or_load_counters():
     
     # Initialise gauges with no values
-    global MESSAGES_RECEIVED, MESSAGES_PROCESSED, BLOOD_TEST_RESULTS_RECEIVED
-    global POSITIVE_AKI_PREDICTIONS, UNSUCCESSFUL_PAGER_REQUESTS, MLLP_SOCKET_RECONNECTIONS
-    global POSITIVE_PREDICTION_RATE, BLOOD_TEST_RESULT_DISTRIBUTION
+    global MESSAGES_RECEIVED, MESSAGES_PROCESSED, BLOOD_TEST_RESULTS_RECEIVED, POSITIVE_AKI_PREDICTIONS
+    global UNSUCCESSFUL_PAGER_REQUESTS, MLLP_SOCKET_RECONNECTIONS, POSITIVE_PREDICTION_RATE
+    global BLOOD_TEST_RESULT_MEAN, BLOOD_TEST_RESULT_STDDEV
     
     MESSAGES_RECEIVED = Gauge('messages_received', 'Number of messages received')
     MESSAGES_PROCESSED = Gauge('messages_processed', 'Number of messages processed')
@@ -34,10 +34,8 @@ def initialize_or_load_counters():
     UNSUCCESSFUL_PAGER_REQUESTS = Gauge('unsuccessful_pager_requests', 'Number of unsuccessful pager HTTP requests')
     MLLP_SOCKET_RECONNECTIONS = Gauge('mllp_socket_reconnections', 'Number of reconnections to the MLLP socket')
     POSITIVE_PREDICTION_RATE = Gauge('positive_prediction_rate', 'Rate of positive AKI predictions')
-    BLOOD_TEST_RESULT_DISTRIBUTION = Histogram(
-        'blood_test_result_distribution',
-        'Distribution of blood test result values',
-        buckets=[0, 50, 100, 150, 200, 250, 300, float("inf")])
+    BLOOD_TEST_RESULT_MEAN = Gauge('blood_test_result_mean', 'Mean of blood test results')
+    BLOOD_TEST_RESULT_STDDEV =  Gauge('blood_test_result_stddev', 'Standard deviation of blood test results')
     
     try: # Load saved counter states
         with open('state/counter_state.json', 'r') as f:
@@ -51,6 +49,8 @@ def initialize_or_load_counters():
         POSITIVE_AKI_PREDICTIONS.set(counter_state.get('positive_aki_predictions', 0))
         UNSUCCESSFUL_PAGER_REQUESTS.set(counter_state.get('unsuccessful_pager_requests', 0))
         MLLP_SOCKET_RECONNECTIONS.set(counter_state.get('mllp_socket_reconnections', 0))
+        BLOOD_TEST_RESULT_MEAN.set(counter_state.get('blood_test_result_mean', 0))
+        BLOOD_TEST_RESULT_STDDEV.set(counter_state.get('blood_test_result_stddev', 0))
 
         # Calculate and set the positive prediction rate based on the loaded values
         if MESSAGES_PROCESSED._value.get() > 0:  # Ensure division by zero is not possible
@@ -61,61 +61,27 @@ def initialize_or_load_counters():
     except FileNotFoundError:
         # Create new counters if the state file doesn't exist
         print("No counter state file found, initializing counters at zero.")
-        
-    try:
-        # Recreate the histogram with the same configuration
-        load_histogram_state('histogram_state.json', BLOOD_TEST_RESULT_DISTRIBUTION)
-        print("Histogram buckets file found, loading histogram buckets from file.")
-    except:
-        print("No histogram buckets file found, initializing histogram with default buckets.")
 
-# Function to extract and save histogram bucket counts to a file
-def save_histogram_state(histogram, filename):
-    # Extract bucket counts
-    bucket_counts = [(float(bucket), count.get()) for bucket, (_, count) in zip(histogram._upper_bounds, histogram._buckets)]
-    histogram_data = {
-        "sum": histogram._sum.get(),
-        "count": histogram._count.get(),
-        "buckets": bucket_counts
-    }
+# Define function to update the mean of blood test results
+def update_blood_test_result_mean(new_result):
+    old_mean = BLOOD_TEST_RESULT_MEAN._value.get()
+    number_of_results = BLOOD_TEST_RESULTS_RECEIVED._value.get()
+    new_mean = (old_mean * (number_of_results - 1) + new_result) / number_of_results
+    BLOOD_TEST_RESULT_MEAN.set(new_mean)
 
-    # Save to JSON file
-    with open(filename, 'w') as f:
-        json.dump(histogram_data, f)
-
-# Function to load histogram bucket counts from a file
-def load_histogram_state(filename, histogram):
-    # Load from JSON file
-    with open(filename, 'r') as f:
-        histogram_data = json.load(f)
-
-    # Set the sum and count
-    histogram._sum.set(histogram_data["sum"])
-    histogram._count.set(histogram_data["count"])
-
-    # Set the bucket counts
-    for upper_bound, count in histogram_data["buckets"]:
-        bucket = next(b for b, bound in zip(histogram._buckets, histogram._upper_bounds) if bound == upper_bound)
-        bucket[1].set(count)
-
-# Function to recreate a histogram with loaded bucket counts
-def recreate_histogram(name, description, loaded_buckets):
-    # Define custom buckets based on loaded data
-    custom_buckets = list(loaded_buckets.keys())
-    histogram = Histogram(name, description, buckets=custom_buckets)
-
-    # Manually populate the histogram with loaded bucket counts
-    for bucket, count in loaded_buckets.items():
-        for _ in range(count):
-            histogram.observe(bucket)
-
-    return histogram
-
+# Define function to update the standard deviation of blood test results
+def update_blood_test_result_stddev(new_result):
+    old_mean = BLOOD_TEST_RESULT_MEAN._value.get()
+    old_stddev = BLOOD_TEST_RESULT_STDDEV._value.get()
+    number_of_results = BLOOD_TEST_RESULTS_RECEIVED._value.get()
+    new_mean = (old_mean * (number_of_results - 1) + new_result) / number_of_results
+    new_stddev = np.sqrt((old_stddev ** 2 * (number_of_results - 1) + (new_result - new_mean) ** 2) / number_of_results)
+    BLOOD_TEST_RESULT_STDDEV.set(new_stddev)
 
 # Define save counter states to a file function
-def save_counter_state():
+def save_counters():
     """
-    Saves the current state of all Prometheus counters to a JSON file.
+    Saves the current state of all Prometheus gauges to a JSON file.
     """
     counter_state = {
         'messages_received': MESSAGES_RECEIVED._value.get(),
@@ -124,7 +90,8 @@ def save_counter_state():
         'positive_aki_predictions': POSITIVE_AKI_PREDICTIONS._value.get(),
         'unsuccessful_pager_requests': UNSUCCESSFUL_PAGER_REQUESTS._value.get(),
         'mllp_socket_reconnections': MLLP_SOCKET_RECONNECTIONS._value.get(),
-        
+        'blood_test_result_mean': BLOOD_TEST_RESULT_MEAN._value.get(),
+        'blood_test_result_stddev': BLOOD_TEST_RESULT_STDDEV._value.get()
     }
     
     with open('state/counter_state.json', 'w') as f:
@@ -398,10 +365,13 @@ def examine_message_and_predict_aki(message, db_path, model):
             if message[3].split("|")[3] == "CREATININE":
                 BLOOD_TEST_RESULTS_RECEIVED.inc()  # Increment blood test result counter
                 update_positive_prediction_rate() # Update positive prediction rate
+                
                 mrn = message[1].split("|")[3]
                 creatinine_result = float(message[3].split("|")[5])
-                BLOOD_TEST_RESULT_DISTRIBUTION.observe(creatinine_result)  # Update histogram with new test 
-
+                
+                update_blood_test_result_mean(creatinine_result)  # Update mean of blood test results
+                update_blood_test_result_stddev(creatinine_result) # Update standard deviation of blood test results
+                
                 # Fetch current test results for the MRN
                 c.execute("""SELECT age, sex, test_1, test_2, test_3, test_4, test_5 FROM patient_history WHERE mrn=?""", (mrn,))
                 row = c.fetchone()
@@ -595,8 +565,7 @@ def main() -> None:
         # This waits for threads to acknowledge the stop_event and exit
         t1.join()
         t2.join()
-        save_counter_state() # Save counter states before exiting
-        save_histogram_state(BLOOD_TEST_RESULT_DISTRIBUTION, 'state/histogram_buckets.pkl') # Save histogram buckets before exiting
+        save_counters() # Save counter states before exiting
         print("Program exited gracefully.")
 
 if __name__ == "__main__":

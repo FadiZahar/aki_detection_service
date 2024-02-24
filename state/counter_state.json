@@ -1,1 +1,1 @@
-{"messages_received": 11563.0, "messages_processed": 11563.0, "blood_test_results_received": 4607.0, "positive_aki_predictions": 91.0, "unsuccessful_pager_requests": 0.0, "mllp_socket_reconnections": 0.0}
+{"messages_received": 40159.0, "messages_processed": 40159.0, "blood_test_results_received": 22423.0, "positive_aki_predictions": 528.0, "unsuccessful_pager_requests": 0.0, "mllp_socket_reconnections": 0.0, "blood_test_result_mean": 2139.02637769123, "blood_test_result_stddev": 52308.36868971977}
