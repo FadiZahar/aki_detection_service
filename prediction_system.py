@@ -17,20 +17,78 @@ import statistics
 from sqlite3 import Error
 import numpy as np
 import logging
-from prometheus_client import Counter, start_http_server, Histogram
+from prometheus_client import Counter, start_http_server, Histogram, Gauge
+import json
 
-# Prometheus Counters
-MESSAGES_RECEIVED = Counter('messages_received', 'Number of messages received')
-MESSAGES_PROCESSED = Counter('messages_processed', 'Number of messages processed')
-BLOOD_TEST_RESULTS_RECEIVED = Counter('blood_test_results_received', 'Number of blood test results received')
-POSITIVE_AKI_PREDICTIONS = Counter('positive_aki_predictions', 'Number of positive AKI predictions')
-UNSUCCESSFUL_PAGER_REQUESTS = Counter('unsuccessful_pager_requests', 'Number of unsuccessful pager HTTP requests')
-MLLP_SOCKET_RECONNECTIONS = Counter('mllp_socket_reconnections', 'Number of reconnections to the MLLP socket')
-BLOOD_TEST_RESULT_DISTRIBUTION = Histogram(
+# Define initialize or load counter states functions
+def initialize_or_load_counters():
+    try:
+        # Load saved counter states
+        with open('state/counter_state.json', 'r') as f:
+            counter_state = json.load(f)
+
+        # Create counters with loaded values or default values
+        global MESSAGES_RECEIVED, MESSAGES_PROCESSED, BLOOD_TEST_RESULTS_RECEIVED
+        global POSITIVE_AKI_PREDICTIONS, UNSUCCESSFUL_PAGER_REQUESTS, MLLP_SOCKET_RECONNECTIONS
+        global POSITIVE_PREDICTION_RATE, BLOOD_TEST_RESULT_DISTRIBUTION
+
+        MESSAGES_RECEIVED = Counter('messages_received', 'Number of messages received', initial_value=counter_state.get('messages_received', 0))
+        MESSAGES_PROCESSED = Counter('messages_processed', 'Number of messages processed', initial_value=counter_state.get('messages_processed', 0))
+        BLOOD_TEST_RESULTS_RECEIVED = Counter('blood_test_results_received', 'Number of blood test results received', initial_value=counter_state.get('blood_test_results_received', 0))
+        POSITIVE_AKI_PREDICTIONS = Counter('positive_aki_predictions', 'Number of positive AKI predictions', initial_value=counter_state.get('positive_aki_predictions', 0))
+        UNSUCCESSFUL_PAGER_REQUESTS = Counter('unsuccessful_pager_requests', 'Number of unsuccessful pager HTTP requests', initial_value=counter_state.get('unsuccessful_pager_requests', 0))
+        MLLP_SOCKET_RECONNECTIONS = Counter('mllp_socket_reconnections', 'Number of reconnections to the MLLP socket', initial_value=counter_state.get('mllp_socket_reconnections', 0))
+        
+        # Initialize the positive prediction rate gauge
+        POSITIVE_PREDICTION_RATE = Gauge('positive_prediction_rate', 'Rate of positive AKI predictions')
+        # Calculate and set the positive prediction rate based on the loaded values
+        if MESSAGES_PROCESSED._value.get() > 0:  # Ensure division by zero is not possible
+            rate = POSITIVE_AKI_PREDICTIONS._value.get() / MESSAGES_PROCESSED._value.get()
+            POSITIVE_PREDICTION_RATE.set(rate)
+            print("positive prediction rate set to: ", rate)
+
+    except FileNotFoundError:
+        # Create new counters if the state file doesn't exist
+        MESSAGES_RECEIVED = Counter('messages_received', 'Number of messages received')
+        MESSAGES_PROCESSED = Counter('messages_processed', 'Number of messages processed')
+        BLOOD_TEST_RESULTS_RECEIVED = Counter('blood_test_results_received', 'Number of blood test results received')
+        POSITIVE_AKI_PREDICTIONS = Counter('positive_aki_predictions', 'Number of positive AKI predictions')
+        UNSUCCESSFUL_PAGER_REQUESTS = Counter('unsuccessful_pager_requests', 'Number of unsuccessful pager HTTP requests')
+        MLLP_SOCKET_RECONNECTIONS = Counter('mllp_socket_reconnections', 'Number of reconnections to the MLLP socket')
+        POSITIVE_PREDICTION_RATE = Gauge('positive_prediction_rate', 'Rate of positive AKI predictions')
+        
+    # TEMPORARY CODE, CHANGE TO REMEMBER THE HISTOGRAM INSTEAD OF INITIALISING AT ZERO FOR EVERY REBOOT
+    BLOOD_TEST_RESULT_DISTRIBUTION = Histogram(
     'blood_test_result_distribution',
     'Distribution of blood test result values',
     buckets=[0, 50, 100, 150, 200, 250, 300, float("inf")]
 )
+
+# Define save counter states to a file function
+def save_counter_state():
+    """
+    Saves the current state of all Prometheus counters to a JSON file.
+    """
+    counter_state = {
+        'messages_received': MESSAGES_RECEIVED._value.get(),
+        'messages_processed': MESSAGES_PROCESSED._value.get(),
+        'blood_test_results_received': BLOOD_TEST_RESULTS_RECEIVED._value.get(),
+        'positive_aki_predictions': POSITIVE_AKI_PREDICTIONS._value.get(),
+        'unsuccessful_pager_requests': UNSUCCESSFUL_PAGER_REQUESTS._value.get(),
+        'mllp_socket_reconnections': MLLP_SOCKET_RECONNECTIONS._value.get(),
+        
+    }
+    
+    with open('state/counter_state.json', 'w') as f:
+        json.dump(counter_state, f)
+        
+    print("Great! Counter states saved to 'state/counter_state.json'.")
+
+# Global gauge for positive prediction rate
+def update_positive_prediction_rate():
+    global BLOOD_TEST_RESULTS_RECEIVED, POSITIVE_AKI_PREDICTIONS, POSITIVE_PREDICTION_RATE
+    current_rate = POSITIVE_AKI_PREDICTIONS._value.get() / BLOOD_TEST_RESULTS_RECEIVED._value.get() if BLOOD_TEST_RESULTS_RECEIVED._value.get() > 0 else 0
+    POSITIVE_PREDICTION_RATE.set(current_rate)
 
 # Configure logging
 logging.basicConfig(
@@ -170,7 +228,7 @@ def processor(address: str, model) -> None:
                     r = urllib.request.urlopen(f"http://{address}/page",
                                                data=mrn.encode('utf-8'))
                     if r.status != 200:
-                            UNSUCCESSFUL_PAGER_REQUESTS.inc() # Increment counter for unsuccessful pager 
+                            UNSUCCESSFUL_PAGER_REQUESTS.inc() # Increment counter for unsuccessful pager
                 # When the process ends, inform message_receiver to acknowledge
                 lock.acquire()
                 try:
@@ -291,6 +349,7 @@ def examine_message_and_predict_aki(message, db_path, model):
         if message[0].split("|")[8] == "ORU^R01":
             if message[3].split("|")[3] == "CREATININE":
                 BLOOD_TEST_RESULTS_RECEIVED.inc()  # Increment blood test result counter
+                update_positive_prediction_rate() # Update positive prediction rate
                 mrn = message[1].split("|")[3]
                 creatinine_result = float(message[3].split("|")[5])
                 BLOOD_TEST_RESULT_DISTRIBUTION.observe(creatinine_result)  # Update histogram with new test 
@@ -313,6 +372,7 @@ def examine_message_and_predict_aki(message, db_path, model):
                     # Update database with new test result and shift older readings
                     if aki_prediction:
                         POSITIVE_AKI_PREDICTIONS.inc() # Increment positive AKI prediction counter
+                        update_positive_prediction_rate()
                         return mrn
                     else:
                         return None
@@ -449,6 +509,8 @@ def main() -> None:
             print(f"The database file '{db_path}' does not exist, proceeding to create it.")
             preload_history_to_sqlite(db_path=db_path, pathname=flags.pathname)
 
+        # Initialize or load counters
+        initialize_or_load_counters()
 
         with open("trained_model.pkl", "rb") as file:
             model = pickle.load(file)
@@ -480,6 +542,7 @@ def main() -> None:
         # This waits for threads to acknowledge the stop_event and exit
         t1.join()
         t2.join()
+        save_counter_state() # Save counter states before exiting
         print("Program exited gracefully.")
 
 
