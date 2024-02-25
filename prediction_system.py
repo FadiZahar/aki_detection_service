@@ -54,7 +54,7 @@ model = None
 lock = threading.Lock()
 
 
-def initialise_or_load_counters():
+def initialise_or_load_counters(save_path: str = 'state/counter_state.json'):
     # Initialise gauges with no values
     global MESSAGES_RECEIVED, MESSAGES_PROCESSED, BLOOD_TEST_RESULTS_RECEIVED, \
         POSITIVE_AKI_PREDICTIONS
@@ -91,7 +91,7 @@ def initialise_or_load_counters():
               'Standard deviation of blood test results')
 
     try:  # Load saved counter states
-        with open('state/counter_state.json', 'r') as f:
+        with open(save_path, 'r') as f:
             counter_state = json.load(f)
 
         print("Counter state file found, loading counters from file.")
@@ -155,7 +155,7 @@ def update_positive_prediction_rate():
 
 
 # Define save counter states to a file function
-def save_counters():
+def save_counters(save_path: str = 'state/counter_state.json'):
     """Saves the current state of all Prometheus gauges to a JSON file.
     """
     counter_state = {
@@ -169,7 +169,7 @@ def save_counters():
         'blood_test_result_stddev': BLOOD_TEST_RESULT_STDDEV._value.get()
     }
 
-    with open('state/counter_state.json', 'w') as f:
+    with open(save_path, 'w') as f:
         json.dump(counter_state, f)
 
     print("Counter states saved to 'state/counter_state.json'.")
@@ -748,6 +748,7 @@ def main() -> None:
         parser = argparse.ArgumentParser()
         parser.add_argument("--pathname", default="hospital-history/history.csv")
         parser.add_argument("--db_path", default="state/my_database.db")
+        parser.add_argument("--metrics_path", default="state/counter_state.json")
         flags = parser.parse_args()
 
         if 'MLLP_ADDRESS' in os.environ:
@@ -773,7 +774,7 @@ def main() -> None:
             preload_history_to_sqlite(db_path=flags.db_path,
                                       pathname=flags.pathname)
 
-        initialise_or_load_counters()
+        initialise_or_load_counters(flags.metrics_path)
 
         with open("trained_model.pkl", "rb") as file:
             model = pickle.load(file)
@@ -809,7 +810,7 @@ def main() -> None:
             t1.join()
         if t2 is not None:
             t2.join()
-        save_counters()  # Save counter states before exiting
+        save_counters(flags.metrics_path)  # Save counter states before exiting
         print("Program exited gracefully.")
 
 
