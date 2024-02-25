@@ -306,7 +306,7 @@ class AKIPredictor:
 
     Constructor Attributes:
         db_path (str): Path to the SQLite database.
-                       Defaults to 'my_database.db'.
+                       Defaults to 'state/my_database.db'.
         model: Machine learning model for AKI prediction.
         metrics_count_flag (bool): Flag to enable or disable Prometheus metrics
                                    counting. Useful for disabling metrics
@@ -327,7 +327,7 @@ class AKIPredictor:
         examine_message_and_predict_aki: Main method to process HL7 messages.
     """
 
-    def __init__(self, model, db_path: str = 'my_database.db',
+    def __init__(self, model, db_path: str = 'state/my_database.db',
                  metrics_count_flag=True):
         self.db_path = db_path
         self.model = model
