@@ -243,69 +243,61 @@ def preload_history_to_sqlite(db_path: str = 'state/my_database.db',
           as the primary key (index).
     """
     # Connect to the SQLite database.
-    conn = sqlite3.connect(db_path)
-    c = conn.cursor()
+    with sqlite3.connect(db_path) as conn:
+        c = conn.cursor()
 
-    # Create the table if it doesn't exist.
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS patient_history (
-            mrn TEXT PRIMARY KEY,
-            age INTEGER,
-            sex INTEGER,
-            test_1 REAL,
-            test_2 REAL,
-            test_3 REAL,
-            test_4 REAL,
-            test_5 REAL
-        )
-    ''')
+        # Create the table if it doesn't exist.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS patient_history (
+                mrn TEXT PRIMARY KEY,
+                age INTEGER,
+                sex INTEGER,
+                test_1 REAL,
+                test_2 REAL,
+                test_3 REAL,
+                test_4 REAL,
+                test_5 REAL
+            )
+        ''')
 
-    with open(pathname, 'r') as file:
-        file = csv.reader(file)
-        next(file)  # Skip the header row.
+        with open(pathname, 'r') as file:
+            csv_reader = csv.reader(file)
+            next(csv_reader)  # Skip the header row.
 
-        for row in file:
-            cleaned_row = [value for value in row if value != '']
+            for row in csv_reader:
+                cleaned_row = [value for value in row if value != '']
+                mrn = cleaned_row[0]
+                age = None
+                sex = None
+                test_results = list(map(float, cleaned_row[2::2]))
+                test_results.reverse()  # Get tests from most to least recent.
 
-            mrn = cleaned_row[0]
-            age = None
-            sex = None
-            test_results = list(map(float, cleaned_row[2::2]))
-            test_results.reverse()  # Get tests from most to least recent.
+                required_number_of_tests = 5
 
-            required_number_of_tests = 5
+                # Ensure exactly 5 test results per patient.
+                if len(test_results) < required_number_of_tests:
+                    average_result = statistics.mean(test_results) if test_results else 0
+                    test_results += [average_result] * (required_number_of_tests - len(test_results))
+                
+                test_results = test_results[:required_number_of_tests]
 
-            # Ensure exactly 5 test results per patient.
-            if len(test_results) < required_number_of_tests:
-                if test_results:  # Ensure the list is not empty
-                    average_result = statistics.mean(test_results)
-                else:
-                    average_result = 0  # Default value if no test available
-                test_results += [average_result] * \
-                                (required_number_of_tests - len(test_results))
-            # Ensure no more than 5 results
-            test_results = test_results[:required_number_of_tests]
+                # Insert data into the database.
+                c.execute('''
+                    INSERT INTO patient_history (
+                        mrn, age, sex, test_1, test_2, test_3, test_4, test_5
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(mrn) DO UPDATE SET
+                    age=excluded.age,
+                    sex=excluded.sex,
+                    test_1=excluded.test_1,
+                    test_2=excluded.test_2,
+                    test_3=excluded.test_3,
+                    test_4=excluded.test_4,
+                    test_5=excluded.test_5
+                ''', (mrn, age, sex, *test_results))
 
-            # Insert data into the database.
-            c.execute('''
-                INSERT INTO patient_history (
-                    mrn, age, sex, test_1, test_2, test_3, test_4, test_5
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(mrn) DO UPDATE SET
-                age=excluded.age,
-                sex=excluded.sex,
-                test_1=excluded.test_1,
-                test_2=excluded.test_2,
-                test_3=excluded.test_3,
-                test_4=excluded.test_4,
-                test_5=excluded.test_5
-            ''', (mrn, age, sex, *test_results))
-
-    # Commit the changes and close the connection.
-    conn.commit()
-    conn.close()
-
+    # The connection is automatically committed and closed when exiting the 'with' block.
     print("Data preloaded into SQLite database successfully.")
 
 
@@ -541,32 +533,31 @@ class AKIPredictor:
             Optional[str]: The MRN of a patient if an AKI prediction is
                            positive; otherwise, None.
         """
-        conn = None
         try:
-            conn = sqlite3.connect(self.db_path)
-            c = conn.cursor()
+            with sqlite3.connect(self.db_path) as conn:
+                c = conn.cursor()
 
-            message_type = message[0].split("|")[8]
-            mrn = message[1].split("|")[3]
-            timestamp = message[0].split("|")[6]
-            msg_identifier = f"\n[MRN: {mrn} " \
-                             f"\nmessage_type <{message_type}>" \
-                             f"\ntimestamp: {timestamp}]"
-            if not mrn.isdigit():
-                logging.error(f"{msg_identifier}\n>> Invalid MRN format: {mrn}")
-                return None
+                message_type = message[0].split("|")[8]
+                mrn = message[1].split("|")[3]
+                timestamp = message[0].split("|")[6]
+                msg_identifier = f"\n[MRN: {mrn} " \
+                                f"\nmessage_type <{message_type}>" \
+                                f"\ntimestamp: {timestamp}]"
+                if not mrn.isdigit():
+                    logging.error(f"{msg_identifier}\n>> Invalid MRN format: {mrn}")
+                    return None
 
-            if message_type == "ORU^R01":
-                result = self.process_lims_message(c, mrn, message,
-                                                   msg_identifier)
-            elif message_type == "ADT^A01":
-                result = self.process_pas_message(c, mrn, message,
-                                                  msg_identifier)
-            else:
-                result = None
+                if message_type == "ORU^R01":
+                    result = self.process_lims_message(c, mrn, message,
+                                                    msg_identifier)
+                elif message_type == "ADT^A01":
+                    result = self.process_pas_message(c, mrn, message,
+                                                    msg_identifier)
+                else:
+                    result = None
 
-            conn.commit()
-            return result
+                conn.commit()
+                return result
 
         except IndexError as e:
             logging.error(f"Error processing message due to invalid message "
@@ -581,23 +572,16 @@ class AKIPredictor:
         return None
 
 
-def processor(address: str, model,
-              db_path: str = 'state/my_database.db') -> None:
+def processor(address: str, model, db_path: str = 'state/my_database.db', max_retries: int = 3, retry_delay: float = 2.0) -> None:
     """Processes messages, updates database or makes predictions, and sends
-    notifications.
-
-    Loops indefinitely until a global stop event is set, handling HL7 messages
-    by updating the patient database or making predictions based on the message
-    content. Optionally sends a notification if AKI is detected.
+    notifications with retry logic for paging failures.
 
     Args:
         address (str): Address to send notifications to, if necessary.
         model: Pretrained Machine learning model for predictions.
         db_path (str): Path to the SQLite database.
-
-    Note:
-        This function relies on global variables including a stop event, a lock,
-        and message queues. It requires external setup of these components.
+        max_retries (int): Maximum number of retry attempts for paging.
+        retry_delay (float): Delay between retry attempts in seconds.
     """
     global messages, send_ack
     # Flag variables.
@@ -608,36 +592,39 @@ def processor(address: str, model,
 
     try:
         while not stop_event.is_set():
-            lock.acquire()
-            try:
+            with lock:
                 if len(messages) > 0:
                     message = messages.pop(0)
                     MESSAGES_RECEIVED.inc()
                     run_code = True
-            finally:
-                lock.release()
 
             if run_code:
                 mrn = aki_predictor.examine_message_and_predict_aki(message)
                 if mrn:
-                    r = urllib.request.urlopen(f"http://{address}/page",
-                                               data=mrn.encode('utf-8'))
-                    if r.status != 200:
-                        UNSUCCESSFUL_PAGER_REQUESTS.inc()
+                    for attempt in range(max_retries):
+                        try:
+                            r = urllib.request.urlopen(f"http://{address}/page", data=mrn.encode('utf-8'))
+                            if r.status == 200:
+                                # Successful paging, break out of the retry loop
+                                break
+                        except urllib.error.URLError as e:
+                            print(f"Paging failed on attempt {attempt + 1}: {e}")
+                        if attempt < max_retries - 1:
+                            # Wait before retrying, unless this was the last attempt
+                            time.sleep(retry_delay)
+                        else:
+                            # Final attempt failed
+                            UNSUCCESSFUL_PAGER_REQUESTS.inc()
+
                 # When the process ends, inform message_receiver to acknowledge.
-                lock.acquire()
-                try:
+                with lock:
                     send_ack = True
                     MESSAGES_PROCESSED.inc()
-                finally:
-                    lock.release()
                 run_code = False
 
     except Exception as e:
         print(f"An error occurred: {e}")
 
-import socket
-import time
 
 def message_receiver(address: tuple[str, int], max_retries: int = 900, base_delay: float = 1.0, max_delay: float = 30.0) -> None:
     """Receives HL7 messages over a socket, decodes, and queues them for processing.
@@ -666,24 +653,16 @@ def message_receiver(address: tuple[str, int], max_retries: int = 900, base_dela
                         MLLP_SOCKET_RECONNECTIONS.inc()
                         continue
                     message = from_mllp(buffer)
-
-                    lock.acquire()
-                    try:
+                    with lock:
                         messages.append(message)
                         MESSAGES_RECEIVED.inc()
-                    finally:
-                        lock.release()
-
                     # Wait to receive heads-up to acknowledge from processor
                     wait_flag = True
                     while wait_flag:
-                        lock.acquire()
-                        try:
+                        with lock:
                             if send_ack:
                                 wait_flag = False
                                 send_ack = False
-                        finally:
-                            lock.release()
                     ack = to_mllp(ACK)
                     s.sendall(ack)
                     MESSAGES_PROCESSED.inc()
@@ -697,6 +676,7 @@ def message_receiver(address: tuple[str, int], max_retries: int = 900, base_dela
 
     if attempt_count == max_retries:
         print("Maximum reconnection attempts reached, stopping.")
+        stop_event.set()
     print("Closing server socket.")
 
 
