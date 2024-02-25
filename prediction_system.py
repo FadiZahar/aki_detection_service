@@ -1,6 +1,7 @@
 import os
 import socket
 import time
+import signal
 import urllib.error
 import urllib.request
 import threading
@@ -15,6 +16,13 @@ import numpy as np
 import logging
 from prometheus_client import start_http_server, Gauge
 import json
+
+#SIGTERM handling
+def sigterm_handler(signum, frame):
+    print("SIGTERM received, signaling threads to stop...")
+    stop_event.set()
+
+signal.signal(signal.SIGTERM, sigterm_handler)
 
 # Configure logging.
 logging.basicConfig(
@@ -628,58 +636,68 @@ def processor(address: str, model,
     except Exception as e:
         print(f"An error occurred: {e}")
 
+import socket
+import time
 
-def message_receiver(address: tuple[str, int]) -> None:
-    """Receives HL7 messages over a socket, decodes, and queues them for
-    processing.
-
-    Establishes a socket connection to continuously listen for HL7 messages at
-    the specified address. Messages are decoded from MLLP format and added to
-    a global queue. Sends acknowledgments back through the socket. Continues
-    until a global stop event is set.
-
+def message_receiver(address: tuple[str, int], max_retries: int = 900, base_delay: float = 1.0, max_delay: float = 30.0) -> None:
+    """Receives HL7 messages over a socket, decodes, and queues them for processing.
+    
     Args:
-        address (tuple[str, int]): Hostname and port number for the socket
-                                   connection.
+        address (tuple[str, int]): Hostname and port number for the socket connection.
+        max_retries (int): Maximum number of reconnection attempts.
+        base_delay (float): Initial delay between reconnection attempts in seconds.
+        max_delay (float): Maximum delay between reconnection attempts in seconds.
     """
     global message, send_ack
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            print("Attempting to connect...")
-            s.connect(address)
-            print("Connected!")
-            while not stop_event.is_set():
-                buffer = s.recv(1024)
-                if len(buffer) == 0:
-                    MLLP_SOCKET_RECONNECTIONS.inc()
-                    continue
-                message = from_mllp(buffer)
+    attempt_count = 0
+    delay = base_delay
 
-                lock.acquire()
-                try:
-                    messages.append(message)
-                    MESSAGES_RECEIVED.inc()
-                finally:
-                    lock.release()
+    while not stop_event.is_set() and attempt_count < max_retries:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                print("Attempting to connect...")
+                s.connect(address)
+                print("Connected!")
+                attempt_count = 0  # Reset attempt count after successful connection
 
-                # Wait to receive heads-up to acknowledge from processor
-                wait_flag = True
-                while wait_flag:
+                while not stop_event.is_set():
+                    buffer = s.recv(1024)
+                    if len(buffer) == 0:
+                        MLLP_SOCKET_RECONNECTIONS.inc()
+                        continue
+                    message = from_mllp(buffer)
+
                     lock.acquire()
                     try:
-                        if send_ack:
-                            wait_flag = False
-                            send_ack = False
+                        messages.append(message)
+                        MESSAGES_RECEIVED.inc()
                     finally:
                         lock.release()
-                ack = to_mllp(ACK)
-                s.sendall(ack)
-                MESSAGES_PROCESSED.inc()
 
-    except Exception as e:
-        print(f"An error occurred: {e}")
+                    # Wait to receive heads-up to acknowledge from processor
+                    wait_flag = True
+                    while wait_flag:
+                        lock.acquire()
+                        try:
+                            if send_ack:
+                                wait_flag = False
+                                send_ack = False
+                        finally:
+                            lock.release()
+                    ack = to_mllp(ACK)
+                    s.sendall(ack)
+                    MESSAGES_PROCESSED.inc()
+
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            time.sleep(delay)
+            delay = min(delay * 2, max_delay)  # Exponential backoff with a maximum
+            attempt_count += 1
+            print(f"Attempting to reconnect, attempt {attempt_count}.")
+
+    if attempt_count == max_retries:
+        print("Maximum reconnection attempts reached, stopping.")
     print("Closing server socket.")
-    s.close()
 
 
 def main() -> None:
