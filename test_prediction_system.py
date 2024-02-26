@@ -4,6 +4,7 @@ import sqlite3
 import os
 import pickle
 import tempfile
+import warnings
 from prediction_system import *
 
 
@@ -25,12 +26,15 @@ class TestAKIPredictor(unittest.TestCase):
         cls.conn = sqlite3.connect(cls.db_path)
         cls.cursor = cls.conn.cursor()
         print(f"Using temporary database at {cls.db_path}")
+        warnings.filterwarnings("ignore", category=UserWarning,
+                                module="sklearn.*")
 
         cls.setup_database()
 
     def setUp(self):
         # Prepare your test environment
-        self.aki_predictor = AKIPredictor(self.model, self.db_path, metrics_count_flag=False)
+        self.aki_predictor = AKIPredictor(self.model, self.db_path,
+                                          metrics_count_flag=False)
 
     @classmethod
     def tearDownClass(cls):
@@ -79,24 +83,30 @@ class TestAKIPredictor(unittest.TestCase):
         self.assertIsNone(result, "Invalid MRN should not trigger AKI prediction")
 
         # Verify that an error was logged
-        msg_identifier = "\n[MRN: M89928 \nmessage_type <ORU^R01>\ntimestamp: 20240331003200]"
-        mock_log_error.assert_called_once_with(f"{msg_identifier}\n>> Invalid MRN format: M89928")
+        msg_identifier = \
+            "\n[MRN: M89928 \nmessage_type <ORU^R01>\ntimestamp: 20240331003200]"
+        mock_log_error.assert_called_once_with(f"{msg_identifier}\n>> "
+                                               f"Invalid MRN format: M89928")
 
-        # Verify no entry is created in the database for the new patient due to invalid DOB
+        # Verify no entry is created for the new patient due to invalid DOB
         self.cursor.execute("SELECT 1 FROM patient_history WHERE mrn = 'M89928'")
         patient_data = self.cursor.fetchone()
-        self.assertIsNone(patient_data, "Patient data should not be created for invalid MRN")
+        self.assertIsNone(patient_data, "Patient data should not be created for "
+                                        "invalid MRN")
 
     @patch('prediction_system.logging.error')
     def test_invalid_message_indexing(self, mock_log_error):
         # Message with missing segments to trigger IndexError
         message = ["MSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||20240331003200"]
         result = self.aki_predictor.examine_message_and_predict_aki(message)
-        self.assertIsNone(result, "Invalid message format should not trigger AKI prediction")
+        self.assertIsNone(result, "Invalid message format should not trigger "
+                                  "AKI prediction")
 
         # Verify that an error was logged with correct content
         mock_log_error.assert_called()
-        mock_log_error.assert_called_with("Error processing message due to invalid message format: list index out of range")
+        mock_log_error.assert_called_with("Error processing message due to "
+                                          "invalid message format: list index "
+                                          "out of range")
 
     @patch('prediction_system.logging.error')
     def test_lims_message_not_for_creatinine(self, mock_log_error):
@@ -108,17 +118,23 @@ class TestAKIPredictor(unittest.TestCase):
             "OBX|1|SN|GLUCOSE||100"  # Non-creatinine test result
         ]
         result = self.aki_predictor.examine_message_and_predict_aki(message)
-        self.assertIsNone(result, "Non-creatinine test results should not trigger AKI prediction")
+        self.assertIsNone(result, "Non-creatinine test results should not trigger "
+                                  "AKI prediction")
 
         # Verify that an error was logged
-        msg_identifier = "\n[MRN: 442925 \nmessage_type <ORU^R01>\ntimestamp: 20240331003200]"
-        mock_log_error.assert_called_once_with(f"{msg_identifier}\n>> Invalid test type: GLUCOSE")
+        msg_identifier = \
+            "\n[MRN: 442925 \nmessage_type <ORU^R01>\ntimestamp: 20240331003200]"
+        mock_log_error.assert_called_once_with(f"{msg_identifier}\n>> "
+                                               f"Invalid test type: GLUCOSE")
 
         # Verify no update for non-creatinine result message
-        self.cursor.execute("SELECT test_1, test_2, test_3, test_4, test_5 FROM patient_history WHERE mrn = '442925'")
+        self.cursor.execute("SELECT test_1, test_2, test_3, test_4, test_5 "
+                            "FROM patient_history WHERE mrn = '442925'")
         updated_tests = self.cursor.fetchone()
         expected_tests = (73.93, 98.37, 82.16, 78.02, 70.88)
-        self.assertEqual(updated_tests, expected_tests, "Patient data should not be updated for non-creatinine results")
+        self.assertEqual(updated_tests, expected_tests, "Patient data should "
+                                                        "not be updated for "
+                                                        "non-creatinine results")
 
     @patch('prediction_system.logging.error')
     def test_incorrect_creatinine_value(self, mock_log_error):
@@ -130,17 +146,23 @@ class TestAKIPredictor(unittest.TestCase):
             "OBX|1|SN|CREATININE||y68.09"
         ]
         result = self.aki_predictor.examine_message_and_predict_aki(message)
-        self.assertIsNone(result, "Incorrect creatinine value should not trigger AKI prediction")
+        self.assertIsNone(result, "Incorrect creatinine value should not trigger "
+                                  "AKI prediction")
 
         # Verify that an error was logged for incorrect creatinine value
-        msg_identifier = "\n[MRN: 640400 \nmessage_type <ORU^R01>\ntimestamp: 20240331003200]"
-        mock_log_error.assert_called_with(f"{msg_identifier}\n>> Invalid test result format: y68.09")
+        msg_identifier = \
+            "\n[MRN: 640400 \nmessage_type <ORU^R01>\ntimestamp: 20240331003200]"
+        mock_log_error.assert_called_with(f"{msg_identifier}\n>> "
+                                          f"Invalid test result format: y68.09")
 
         # Verify no update for invalid creatinine result message
-        self.cursor.execute("SELECT test_1, test_2, test_3, test_4, test_5 FROM patient_history WHERE mrn = '640400'")
+        self.cursor.execute("SELECT test_1, test_2, test_3, test_4, test_5 "
+                            "FROM patient_history WHERE mrn = '640400'")
         updated_tests = self.cursor.fetchone()
         expected_tests = (107.66, 116.58, 85.98, 100.95, 104.96)
-        self.assertEqual(updated_tests, expected_tests, "Patient data should not be updated with invalid creatinine results")
+        self.assertEqual(updated_tests, expected_tests, "Patient data should not "
+                                                        "be updated with invalid "
+                                                        "creatinine results")
 
     def test_lims_message_current_patient_updates_entry(self):
         message = [
@@ -150,13 +172,17 @@ class TestAKIPredictor(unittest.TestCase):
             "OBX|1|SN|CREATININE||110.0"
         ]
         mrn = self.aki_predictor.examine_message_and_predict_aki(message)
-        self.assertIsNone(mrn, "MRN should not be returned for negative AKI prediction")
+        self.assertIsNone(mrn, "MRN should not be returned for negative AKI "
+                               "prediction")
 
-        # Verify that the test results have been updated and shifted properly in the database
-        self.cursor.execute("SELECT test_1, test_2, test_3, test_4, test_5 FROM patient_history WHERE mrn = '640400'")
+        # Verify that the test results have been updated and shifted properly
+        self.cursor.execute("SELECT test_1, test_2, test_3, test_4, test_5 "
+                            "FROM patient_history WHERE mrn = '640400'")
         updated_tests = self.cursor.fetchone()
         expected_tests = (110.0, 107.66, 116.58, 85.98, 100.95)
-        self.assertEqual(updated_tests, expected_tests, "Test results have not been updated and shifted properly")
+        self.assertEqual(updated_tests, expected_tests, "Test results have not "
+                                                        "been updated and shifted "
+                                                        "properly")
 
     def test_lims_message_new_patient_creates_entry(self):
         message = [
@@ -166,15 +192,20 @@ class TestAKIPredictor(unittest.TestCase):
             "OBX|1|SN|CREATININE||150.0"
         ]
         mrn = self.aki_predictor.examine_message_and_predict_aki(message)
-        self.assertIsNone(mrn, "MRN should not be returned for missing demographic info where LIMS is received before PAS for a new patient")
+        self.assertIsNone(mrn, "MRN should not be returned for missing "
+                               "demographic info where LIMS is received before "
+                               "PAS for a new patient")
 
         # Verify that a new entry was created in the database
         self.cursor.execute(
-            "SELECT age, sex, test_1, test_2, test_3, test_4, test_5 FROM patient_history WHERE mrn = ?", ("999999",))
+            "SELECT age, sex, test_1, test_2, test_3, test_4, test_5 "
+            "FROM patient_history WHERE mrn = ?", ("999999",))
         patient_data = self.cursor.fetchone()
 
         expected_data = (None, None, 150.0, 150.0, 150.0, 150.0, 150.0)
-        self.assertEqual(patient_data, expected_data, "New patient entry with test results was not created correctly")
+        self.assertEqual(patient_data, expected_data, "New patient entry with "
+                                                      "test results was not "
+                                                      "created correctly")
 
         # Verify that the MRN is added to pending_predictions
         self.assertIn("999999", self.aki_predictor.pending_predictions,
@@ -184,21 +215,26 @@ class TestAKIPredictor(unittest.TestCase):
     def test_pas_message_with_invalid_dob(self, mock_log_error):
         message = [
             "MSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||20240331003200||ADT^A01|||2.5",
-            "PID|1||164125||JOHN DOE||20012312|M", # Patient with invalid DOB
+            "PID|1||164125||JOHN DOE||20012312|M",  # Patient with invalid DOB
             "NK1|1|ERICA DOE|PARTNER"
         ]
         result = self.aki_predictor.examine_message_and_predict_aki(message)
-        self.assertIsNone(result, "Invalid DOB should not trigger any database update or AKI prediction")
+        self.assertIsNone(result, "Invalid DOB should not trigger any database "
+                                  "update or AKI prediction")
 
         # Verify that an error was logged with the correct message
-        msg_identifier = "\n[MRN: 164125 \nmessage_type <ADT^A01>\ntimestamp: 20240331003200]"
-        mock_log_error.assert_called_once_with(f"{msg_identifier}\n>> Invalid DOB format: 20012312")
+        msg_identifier = \
+            "\n[MRN: 164125 \nmessage_type <ADT^A01>\ntimestamp: 20240331003200]"
+        mock_log_error.assert_called_once_with(f"{msg_identifier}\n>> "
+                                               f"Invalid DOB format: 20012312")
 
         # Verify that no update occurs for the invalid dob value in the database
-        self.cursor.execute("SELECT age, sex FROM patient_history WHERE mrn = '164125'")
+        self.cursor.execute("SELECT age, sex FROM patient_history "
+                            "WHERE mrn = '164125'")
         patient_data = self.cursor.fetchone()
         expected_data = (24, 0)
-        self.assertEqual(patient_data, expected_data, "Patient data should not be created for invalid DOB")
+        self.assertEqual(patient_data, expected_data, "Patient data should not be "
+                                                      "created for invalid DOB")
 
     @patch('prediction_system.logging.error')
     def test_pas_message_with_invalid_sex(self, mock_log_error):
@@ -208,17 +244,22 @@ class TestAKIPredictor(unittest.TestCase):
             "NK1|1|JOHN DOE|PARTNER"
         ]
         result = self.aki_predictor.examine_message_and_predict_aki(message)
-        self.assertIsNone(result, "Invalid sex should not trigger any database update or AKI prediction")
+        self.assertIsNone(result, "Invalid sex should not trigger any database "
+                                  "update or AKI prediction")
 
         # Verify that an error was logged with the correct message
-        msg_identifier = "\n[MRN: 164125 \nmessage_type <ADT^A01>\ntimestamp: 20240331003200]"
-        mock_log_error.assert_called_once_with(f"{msg_identifier}\n>> Invalid sex value: W")
+        msg_identifier = \
+            "\n[MRN: 164125 \nmessage_type <ADT^A01>\ntimestamp: 20240331003200]"
+        mock_log_error.assert_called_once_with(f"{msg_identifier}\n>> "
+                                               f"Invalid sex value: W")
 
         # Verify that no update occurs for the invalid sex value in the database
-        self.cursor.execute("SELECT age, sex FROM patient_history WHERE mrn = '164125'")
+        self.cursor.execute("SELECT age, sex FROM patient_history "
+                            "WHERE mrn = '164125'")
         patient_data = self.cursor.fetchone()
         expected_data = (24, 0)
-        self.assertEqual(patient_data, expected_data, "Patient data should not be created for invalid sex")
+        self.assertEqual(patient_data, expected_data, "Patient data should not be "
+                                                      "created for invalid sex")
 
     def test_pas_message_updates_age(self):
         message = [
@@ -227,14 +268,18 @@ class TestAKIPredictor(unittest.TestCase):
             "NK1|1|ERICA DOE|PARTNER"
         ]
         result = self.aki_predictor.examine_message_and_predict_aki(message)
-        self.assertIsNone(result, "PAS message for MRN not in pending_predictions should return None")
+        self.assertIsNone(result, "PAS message for MRN not in pending_predictions "
+                                  "should return None")
 
-        # Verify that no update occurs for the invalid sex value in the database
-        self.cursor.execute("SELECT age, sex FROM patient_history WHERE mrn = '755374'")
+        # Verify that age has been updated in the database
+        self.cursor.execute("SELECT age, sex FROM patient_history "
+                            "WHERE mrn = '755374'")
         patient_data = self.cursor.fetchone()
         expected_age = self.aki_predictor._calculate_age("19800312")
         expected_data = (expected_age, 0)
-        self.assertEqual(patient_data, expected_data, f"Age should be updated to {expected_age} in the database")
+        self.assertEqual(patient_data, expected_data, f"Age should be updated to "
+                                                      f"{expected_age} in the "
+                                                      f"database")
 
     def test_pas_message_creates_new_patient_record(self):
         message = [
@@ -243,19 +288,28 @@ class TestAKIPredictor(unittest.TestCase):
             "NK1|1|ERICA SMITH|PARTNER"
         ]
         result = self.aki_predictor.examine_message_and_predict_aki(message)
-        self.assertIsNone(result, "No MRN should be returned for PAS message for new patient")
+        self.assertIsNone(result, "No MRN should be returned for PAS message for "
+                                  "new patient")
 
-        # Verify a new record was created in the database with the correct age and sex
-        self.cursor.execute("SELECT age, sex, test_1, test_2, test_3, test_4, test_5 FROM patient_history WHERE mrn = '55555'")
+        # Verify a new record was created with the correct age and sex
+        self.cursor.execute(
+            "SELECT age, sex, test_1, test_2, test_3, test_4, test_5 "
+            "FROM patient_history WHERE mrn = '55555'"
+        )
         patient_data = self.cursor.fetchone()
 
         # Assert the new record exists with the correct age and sex
-        self.assertIsNotNone(patient_data, "A new patient record should have been created")
+        self.assertIsNotNone(patient_data, "A new patient record should have "
+                                           "been created")
         expected_age = self.aki_predictor._calculate_age('19900101')
-        self.assertEqual(patient_data[0], expected_age, "Age should match the calculated value based on DOB")
-        self.assertEqual(patient_data[1], 0, "Sex should be correctly set as male (0 for M)")
+        self.assertEqual(patient_data[0], expected_age, "Age should match the "
+                                                        "calculated value based "
+                                                        "on DOB")
+        self.assertEqual(patient_data[1], 0, "Sex should be correctly set as "
+                                             "male (0 for M)")
         for test_result in patient_data[2:]:  # Test results 1 to 5
-            self.assertIsNone(test_result, "Test results should be initialised to NULL for a new patient")
+            self.assertIsNone(test_result, "Test results should be initialised "
+                                           "to NULL for a new patient")
 
     def test_lims_then_pas_for_new_patient_updates_and_attempts_aki_prediction(self):
         # Step 1: Simulate LIMS message for a new patient
@@ -266,14 +320,21 @@ class TestAKIPredictor(unittest.TestCase):
             "OBX|1|SN|CREATININE||100.0"
         ]
         result_lims = self.aki_predictor.examine_message_and_predict_aki(lims_message)
-        self.assertIsNone(result_lims, "MRN should not be returned for missing demographic info where LIMS is received before PAS")
+        self.assertIsNone(result_lims, "MRN should not be returned for missing "
+                                       "emographic info where LIMS is received "
+                                       "before PAS")
 
-        # Verify a new entry was created with correct tests and MRN is in pending_predictions
+        # Verify a new entry was created with correct tests and MRN is in
+        # pending_predictions
         self.cursor.execute(
-            "SELECT age, sex, test_1, test_2, test_3, test_4, test_5 FROM patient_history WHERE mrn = '333333'")
+            "SELECT age, sex, test_1, test_2, test_3, test_4, test_5 "
+            "FROM patient_history WHERE mrn = '333333'"
+        )
         patient_data = self.cursor.fetchone()
-        self.assertEqual(patient_data, (None, None, 100.0, 100.0, 100.0, 100.0, 100.0),
-                         "LIMS message for a new patient did not correctly create entry")
+        self.assertEqual(patient_data,
+                         (None, None, 100.0, 100.0, 100.0, 100.0, 100.0),
+                         "LIMS message for a new patient did not correctly "
+                         "create entry")
         self.assertIn('333333', self.aki_predictor.pending_predictions,
                       "New patient MRN was not added to pending_predictions")
 
@@ -284,19 +345,27 @@ class TestAKIPredictor(unittest.TestCase):
             "NK1|1|ERICA SMITH|PARTNER"
         ]
         result_pas = self.aki_predictor.examine_message_and_predict_aki(pas_message)
-        self.assertIsNone(result_pas, "PAS message should not return MRN when demographic info is updated (for pending_prediction's MRN) without triggering AKI prediction")
+        self.assertIsNone(result_pas, "PAS message should not return MRN when "
+                                      "demographic info is updated (for "
+                                      "pending_prediction's MRN) without "
+                                      "triggering AKI prediction")
 
-        # Verify the database is updated with demographic info and attempt an AKI prediction
+        # Verify the database is updated with demographic info and attempt
+        # an AKI prediction
         self.cursor.execute(
-            "SELECT age, sex, test_1, test_2, test_3, test_4, test_5 FROM patient_history WHERE mrn = '333333'")
+            "SELECT age, sex, test_1, test_2, test_3, test_4, test_5 "
+            "FROM patient_history WHERE mrn = '333333'")
         updated_data = self.cursor.fetchone()
         expected_age = self.aki_predictor._calculate_age("19800312")
-        self.assertEqual(updated_data, (expected_age, 0, 100.0, 100.0, 100.0, 100.0, 100.0),
+        self.assertEqual(updated_data,
+                         (expected_age, 0, 100.0, 100.0, 100.0, 100.0, 100.0),
                          "PAS message did not update demographic info correctly")
 
-        # Step 3: Verify that an AKI prediction attempt was made and MRN removed from pending_predictions
+        # Step 3: Verify that an AKI prediction attempt was made and MRN removed
+        # from pending_predictions
         self.assertNotIn('333333', self.aki_predictor.pending_predictions,
-                         "MRN should be removed from pending_predictions after demographic update and AKI prediction attempt")
+                         "MRN should be removed from pending_predictions after "
+                         "demographic update and AKI prediction attempt")
 
     @patch('prediction_system.logging.info')
     def test_detect_aki_high_creatinine_returns_mrn(self, mock_log_info):
@@ -305,17 +374,24 @@ class TestAKIPredictor(unittest.TestCase):
             "MSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||20240331003200||ORU^R01|||2.5",
             "PID|1||160064",
             "OBR|1||||||20240331003200",
-            "OBX|1|SN|CREATININE||300"  # High creatinine level, should trigger AKI prediction
+            "OBX|1|SN|CREATININE||300"  # High creatinine level, should trigger AKI
+                                        # prediction
         ]
-        mrn = self.aki_predictor.examine_message_and_predict_aki(high_creatinine_message)
+        mrn = self.aki_predictor.examine_message_and_predict_aki(
+            high_creatinine_message
+        )
 
-        # Check if the MRN is correctly returned, indicating a positive AKI prediction
-        self.assertIsNotNone(mrn, "MRN should be returned for positive AKI prediction due to high creatinine level")
-        self.assertEqual(mrn, "160064", "MRN of the patient with high creatinine level should be returned")
+        # Check if MRN is correctly returned, indicating a positive AKI prediction
+        self.assertIsNotNone(mrn, "MRN should be returned for positive AKI "
+                                  "prediction due to high creatinine level")
+        self.assertEqual(mrn, "160064", "MRN of the patient with high "
+                                        "creatinine level should be returned")
 
         # Verify that an info log was made with the correct message
-        msg_identifier = "\n[MRN: 160064 \nmessage_type <ORU^R01>\ntimestamp: 20240331003200]"
-        mock_log_info.assert_called_once_with(f"{msg_identifier}\n>> AKI predicted for MRN: 160064")
+        msg_identifier = \
+            "\n[MRN: 160064 \nmessage_type <ORU^R01>\ntimestamp: 20240331003200]"
+        mock_log_info.assert_called_once_with(f"{msg_identifier}\n>> "
+                                              f"AKI predicted for MRN: 160064")
 
     def test_pas_discharge_message_does_not_update_database(self):
         # Discharge message for non-existing patient
@@ -323,13 +399,18 @@ class TestAKIPredictor(unittest.TestCase):
             "MSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||202401201630||ADT^A03|||2.5",
             "PID|1||478237423"
         ]
-        result = self.aki_predictor.examine_message_and_predict_aki(discharge_message)
-        self.assertIsNone(result, "PAS discharge message should not trigger AKI prediction")
+        result = self.aki_predictor.examine_message_and_predict_aki(
+            discharge_message
+        )
+        self.assertIsNone(result, "PAS discharge message should not trigger "
+                                  "AKI prediction")
 
         # Verify no entry is created in the database for the new patient
-        self.cursor.execute("SELECT 1 FROM patient_history WHERE mrn = '478237423'")
+        self.cursor.execute("SELECT 1 FROM patient_history "
+                            "WHERE mrn = '478237423'")
         patient_data = self.cursor.fetchone()
-        self.assertIsNone(patient_data, "Patient data should not be created for discharge message")
+        self.assertIsNone(patient_data, "Patient data should not be created "
+                                        "for discharge message")
 
 
 class TestMLLPConversion(unittest.TestCase):
@@ -339,21 +420,29 @@ class TestMLLPConversion(unittest.TestCase):
             "MSA|AA",
         ]
         ack = to_mllp(ACK)
-        expected_mllp = b'\x0bMSH|^~\\&|||||20240129093837||ACK|||2.5\rMSA|AA\r\x1c\r'
-        self.assertEqual(ack, expected_mllp, "The MLLP conversion of ACK message did not match the expected output.")
+        expected_mllp = \
+            b'\x0bMSH|^~\\&|||||20240129093837||ACK|||2.5\rMSA|AA\r\x1c\r'
+        self.assertEqual(ack, expected_mllp, "The MLLP conversion of ACK message "
+                                             "did not match the expected output.")
 
     def test_from_mllp(self):
-        # Test the decoding of an MLLP encoded message back into HL7 message segments
-        mllp_message = b'\x0bMSH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||20240102135300||ADT^A01|||2.5\rPID|1||497030||ROSCOE DOHERTY||19870515|M\r\x1c\r'
+        # Test the decoding of MLLP-encoded message back into HL7 segments
+        mllp_message = \
+            b'\x0bMSH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||20240102135300||' \
+            b'ADT^A01|||2.5\rPID|1||497030||ROSCOE DOHERTY||19870515|M\r\x1c\r'
         expected_segments = [
             "MSH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||20240102135300||ADT^A01|||2.5",
             "PID|1||497030||ROSCOE DOHERTY||19870515|M"
         ]
         self.assertEqual(from_mllp(mllp_message), expected_segments,
-                         "Decoding from MLLP did not produce the expected HL7 message segments.")
+                         "Decoding from MLLP did not produce the expected HL7 "
+                         "message segments.")
 
         # Test for another MLLP encoded message
-        mllp_message_2 = b'\x0bMSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||20240331003200||ORU^R01|||2.5\rPID|1||125412\rOBR|1||||||20240331003200\rOBX|1|SN|CREATININE||127.5695463720204\r\x1c\r'
+        mllp_message_2 = b'\x0bMSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||' \
+                         b'20240331003200||ORU^R01|||2.5\rPID|1||125412\rOBR|1|' \
+                         b'|||||20240331003200\rOBX|1|SN|CREATININE||' \
+                         b'127.5695463720204\r\x1c\r'
         expected_segments_2 = [
             "MSH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||20240331003200||ORU^R01|||2.5",
             "PID|1||125412",
@@ -361,10 +450,13 @@ class TestMLLPConversion(unittest.TestCase):
             "OBX|1|SN|CREATININE||127.5695463720204"
         ]
         self.assertEqual(from_mllp(mllp_message_2), expected_segments_2,
-                         "Decoding from MLLP did not produce the expected HL7 message segments for the second test.")
+                         "Decoding from MLLP did not produce the expected HL7 "
+                         "message segments for the second test.")
 
     def test_from_mllp_with_omitted_start_and_end_block(self):
-        mllp_message_3 = b'MSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||20240331003200||ORU^R01|||2.5\rPID|1||125412\rOBR|1||||||20240331003200\rOBX|1|SN|CREATININE||127.5695463720204'
+        mllp_message_3 = b'MSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||20240331003200||' \
+                         b'ORU^R01|||2.5\rPID|1||125412\rOBR|1||||||20240331003200' \
+                         b'\rOBX|1|SN|CREATININE||127.5695463720204'
         expected_segments_3 = [
             "SH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||20240331003200||ORU^R01|||2.5",
             "PID|1||125412",
@@ -372,17 +464,20 @@ class TestMLLPConversion(unittest.TestCase):
             "OBX|1|SN|CREATININE||127.5695463720"
         ]
         self.assertEqual(from_mllp(mllp_message_3), expected_segments_3,
-                         "Decoding from MLLP did not produce the expected HL7 message segments for the third test.")
+                         "Decoding from MLLP did not produce the expected HL7 "
+                         "message segments for the third test.")
 
     def test_from_mllp_with_double_carriage_returns(self):
-        mllp_message_4 = b'\x0bMSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||20240331035800||ADT^A03|||2.5\r\rPID|1||829339\r\x1c\r'
+        mllp_message_4 = b'\x0bMSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||' \
+                         b'20240331035800||ADT^A03|||2.5\r\rPID|1||829339\r\x1c\r'
         expected_segments_4 = [
             "MSH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||20240331035800||ADT^A03|||2.5",
             "",
             "PID|1||829339"
         ]
         self.assertEqual(from_mllp(mllp_message_4), expected_segments_4,
-                         "Decoding from MLLP did not produce the expected HL7 message segments for the fourth test.")
+                         "Decoding from MLLP did not produce the expected HL7 "
+                         "message segments for the fourth test.")
 
 
 class TestPreloadHistoryToSQLite(unittest.TestCase):
@@ -398,8 +493,9 @@ class TestPreloadHistoryToSQLite(unittest.TestCase):
 
         # Connect to the temporary file database and preload data.
         cls.conn = sqlite3.connect(cls.db_path)
-        history_csv_path = os.getenv("HISTORY_CSV_PATH", "hospital-history/history.csv")
-        preload_history_to_sqlite(cls.db_path, history_csv_path) # hardcoded the path for docker
+        history_csv_path = os.getenv("HISTORY_CSV_PATH",
+                                     "hospital-history/history.csv")
+        preload_history_to_sqlite(cls.db_path, history_csv_path)
 
     @classmethod
     def tearDownClass(cls):
@@ -410,23 +506,28 @@ class TestPreloadHistoryToSQLite(unittest.TestCase):
 
     def test_table_exists(self):
         cursor = self.conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='patient_history';")
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                       "AND name='patient_history';")
         table_exists = cursor.fetchone()
-        self.assertIsNotNone(table_exists, "Table 'patient_history' should exist.")
+        self.assertIsNotNone(table_exists, "Table 'patient_history' "
+                                           "should exist.")
 
     def test_initial_data_loaded(self):
         cursor = self.conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM patient_history;")
         count = cursor.fetchone()[0]
-        self.assertGreater(count, 0, "Initial data should be loaded into 'patient_history' table.")
+        self.assertGreater(count, 0, "Initial data should be loaded into "
+                                     "'patient_history' table.")
 
     def test_column_structure(self):
         cursor = self.conn.cursor()
         cursor.execute("PRAGMA table_info(patient_history);")
         columns_info = cursor.fetchall()
         columns = [info[1] for info in columns_info]
-        expected_columns = ['mrn', 'age', 'sex', 'test_1', 'test_2', 'test_3', 'test_4', 'test_5']
-        self.assertEqual(columns, expected_columns, "Table structure does not match expected columns.")
+        expected_columns = ['mrn', 'age', 'sex', 'test_1', 'test_2', 'test_3',
+                            'test_4', 'test_5']
+        self.assertEqual(columns, expected_columns, "Table structure does not "
+                                                    "match expected columns.")
 
     def test_age_and_sex_values_none_initially(self):
         cursor = self.conn.cursor()
@@ -438,19 +539,23 @@ class TestPreloadHistoryToSQLite(unittest.TestCase):
 
     def test_mrn_and_test_result_values_not_none_initially(self):
         cursor = self.conn.cursor()
-        cursor.execute("SELECT mrn, test_1, test_2, test_3, test_4, test_5 FROM patient_history;")
+        cursor.execute("SELECT mrn, test_1, test_2, test_3, test_4, test_5 "
+                       "FROM patient_history;")
         rows = cursor.fetchall()
-        self.assertTrue(rows, "The database should have patient records after preloading.")
+        self.assertTrue(rows, "The database should have patient records after "
+                              "preloading.")
         for row in rows:
             mrn, test_1, test_2, test_3, test_4, test_5 = row
             self.assertTrue(mrn.isdigit(), f"MRN {mrn} is not all digit.")
 
-            # Check each test result to ensure it's either None or can be represented as a float.
-            for idx, test_result in enumerate([test_1, test_2, test_3, test_4, test_5], start=1):
+            # Check each test result to ensure it can be represented as a float.
+            for idx, test_result in enumerate(
+                    [test_1, test_2, test_3, test_4, test_5], start=1):
                 try:
                     float(test_result)
                 except ValueError:
-                    self.fail(f"Test result {test_result} for MRN {mrn}, test_{idx} cannot be converted to float.")
+                    self.fail(f"Test result {test_result} for MRN {mrn}, "
+                              f"test_{idx} cannot be converted to float.")
 
 
 if __name__ == '__main__':
