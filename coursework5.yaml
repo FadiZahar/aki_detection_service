@@ -36,6 +36,9 @@ spec:
           value: devesa-simulator.coursework5:8440 # which one we are connecting to 
         - name: PAGER_ADDRESS
           value: devesa-simulator.coursework5:8441
+        ports:
+        - name: http
+          containerPort: 8000
         volumeMounts: ## move to here
           - mountPath: "/hospital-history"
             name: hospital-history
@@ -63,3 +66,4 @@ spec:
       - name: aki-detection-state
         persistentVolumeClaim:
           claimName: aki-detection-state
+    

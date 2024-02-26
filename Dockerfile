@@ -29,6 +29,7 @@ COPY hospital-history/history.csv /hospital-history/
 RUN dos2unix prediction_system.py && chmod +x prediction_system.py
 
 # Run tests to ensure everything is set up correctly. Docker build will stop if this fails.
+ENV HISTORY_CSV_PATH=/hospital-history/history.csv
 RUN python3 test_prediction_system.py
 
 # Set environment variable to ensure Python output is displayed in the Docker logs in real-time

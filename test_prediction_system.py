@@ -389,19 +389,17 @@ class TestPreloadHistoryToSQLite(unittest.TestCase):
     db_path = None
     db_file = None
     conn = None
-
+    
     @classmethod
     def setUpClass(cls):
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--pathname", default="hospital-history/history.csv")
-        flags = parser.parse_args()
         # Create a temporary file to use as the database.
         cls.db_file, cls.db_path = tempfile.mkstemp(suffix='.db')
         print(f"Using temporary database at {cls.db_path}")
 
         # Connect to the temporary file database and preload data.
         cls.conn = sqlite3.connect(cls.db_path)
-        preload_history_to_sqlite(cls.db_path, "/hospital-history/history.csv") # temporarily hardcoding the path for docker
+        history_csv_path = os.getenv("HISTORY_CSV_PATH", "hospital-history/history.csv")
+        preload_history_to_sqlite(cls.db_path, history_csv_path) # hardcoded the path for docker
 
     @classmethod
     def tearDownClass(cls):
