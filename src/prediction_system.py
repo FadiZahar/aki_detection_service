@@ -220,7 +220,7 @@ def to_mllp(segments: list[str]) -> bytes:
 
 
 def preload_history_to_sqlite(db_path: str = 'state/my_database.db',
-                              pathname: str = 'hospital-history/history.csv'):
+                              pathname: str = 'data/hospital-history/history.csv'):
     """Loads historical patient data from a CSV file into an SQLite database.
 
     This function processes a specified CSV file to extract patient identifiers
@@ -231,7 +231,7 @@ def preload_history_to_sqlite(db_path: str = 'state/my_database.db',
         db_path (str): The file path to the SQLite database. Defaults to
                        'state/my_database.db'.
         pathname (str): The file path to the CSV file containing historical
-                        patient data. Defaults to 'hospital-history/history.csv'.
+                        patient data. Defaults to 'data/hospital-history/history.csv'.
 
     Returns:
         None: This function does not return a value but inserts data into the
@@ -720,7 +720,7 @@ def main() -> None:
 
     Command-Line Arguments:
         --pathname: Path to the CSV file containing historical patient data.
-                    Defaults to 'hospital-history/history.csv'.
+                    Defaults to 'data/hospital-history/history.csv'.
         --db_path: Path to the SQLite database file. Defaults to
                    'state/my_database.db'.
 
@@ -739,7 +739,7 @@ def main() -> None:
     warnings.filterwarnings("ignore")
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--pathname", default="hospital-history/history.csv")
+    parser.add_argument("--pathname", default="data/hospital-history/history.csv")
     parser.add_argument("--db_path", default="state/my_database.db")
     parser.add_argument("--metrics_path", default="state/counter_state.json")
     flags = parser.parse_args()
@@ -770,7 +770,7 @@ def main() -> None:
 
         initialise_or_load_counters(flags.metrics_path)
 
-        with open("trained_model.pkl", "rb") as file:
+        with open("models/trained_model.pkl", "rb") as file:
             model = pickle.load(file)
 
         global messages, send_ack

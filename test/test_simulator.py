@@ -9,7 +9,7 @@ import unittest
 import urllib.error
 import urllib.request
 
-import simulator
+import src.simulator as simulator
 
 ADT_A01 = [
     "MSH|^~\&|SIMULATION|SOUTH RIVERSIDE|||202401201630||ADT^A01|||2.5",

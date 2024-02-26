@@ -11,21 +11,22 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -yq \
 # Create the /state directory for the SQLite database
 RUN mkdir -p /state && chmod 777 /state
 
-# Set the working directory to /simulator
-WORKDIR /simulator
+# Set the working directory to /deployment
+WORKDIR /deployment
 
 # Copy the requirements file first to leverage Docker cache
-COPY requirements.txt /simulator/
+COPY requirements.txt /deployment/
 # Install Python dependencies
 RUN pip3 install -r requirements.txt
 
 # Copy the rest of the application files
-COPY prediction_system.py trained_model.pkl test_prediction_system.py /simulator/
+COPY src/prediction_system.py test/test_prediction_system.py /deployment/
+COPY models/trained_model.pkl /deployment/models/
 # Copy additional files needed for the application
-COPY messages.mllp /data/
-COPY hospital-history/history.csv /hospital-history/
-COPY test_data/test_f3.csv /test_data/
-COPY test_data/labels_f3.csv /test_data/
+COPY data/messages.mllp /data/
+COPY data/hospital-history/history.csv /hospital-history/
+COPY data/test_data/test_f3.csv /test_data/
+COPY data/test_data/labels_f3.csv /test_data/
 
 # Convert line endings and adjust permissions
 RUN dos2unix prediction_system.py && chmod +x prediction_system.py
