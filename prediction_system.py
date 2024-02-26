@@ -17,12 +17,15 @@ import logging
 from prometheus_client import start_http_server, Gauge
 import json
 
+
 #SIGTERM handling
 def sigterm_handler(signum, frame):
     print("SIGTERM received, signaling threads to stop...")
     stop_event.set()
 
+
 signal.signal(signal.SIGTERM, sigterm_handler)
+
 
 # Configure logging.
 logging.basicConfig(
@@ -276,8 +279,10 @@ def preload_history_to_sqlite(db_path: str = 'state/my_database.db',
 
                 # Ensure exactly 5 test results per patient.
                 if len(test_results) < required_number_of_tests:
-                    average_result = statistics.mean(test_results) if test_results else 0
-                    test_results += [average_result] * (required_number_of_tests - len(test_results))
+                    average_result = statistics.mean(test_results) \
+                        if test_results else 0
+                    test_results += [average_result] * (required_number_of_tests
+                                                        - len(test_results))
                 
                 test_results = test_results[:required_number_of_tests]
 
@@ -297,7 +302,7 @@ def preload_history_to_sqlite(db_path: str = 'state/my_database.db',
                     test_5=excluded.test_5
                 ''', (mrn, age, sex, *test_results))
 
-    # The connection is automatically committed and closed when exiting the 'with' block.
+    # Connection is automatically committed & closed when exiting 'with' block.
     print("Data preloaded into SQLite database successfully.")
 
 
@@ -544,7 +549,8 @@ class AKIPredictor:
                                 f"\nmessage_type <{message_type}>" \
                                 f"\ntimestamp: {timestamp}]"
                 if not mrn.isdigit():
-                    logging.error(f"{msg_identifier}\n>> Invalid MRN format: {mrn}")
+                    logging.error(f"{msg_identifier}\n>> "
+                                  f"Invalid MRN format: {mrn}")
                     return None
 
                 if message_type == "ORU^R01":
@@ -572,7 +578,8 @@ class AKIPredictor:
         return None
 
 
-def processor(address: str, model, db_path: str = 'state/my_database.db', max_retries: int = 3, retry_delay: float = 2.0) -> None:
+def processor(address: str, model, db_path: str = 'state/my_database.db',
+              max_retries: int = 10, retry_delay: float = 2.0) -> None:
     """Processes messages, updates database or makes predictions, and sends
     notifications with retry logic for paging failures.
 
@@ -603,14 +610,15 @@ def processor(address: str, model, db_path: str = 'state/my_database.db', max_re
                 if mrn:
                     for attempt in range(max_retries):
                         try:
-                            r = urllib.request.urlopen(f"http://{address}/page", data=mrn.encode('utf-8'))
+                            r = urllib.request.urlopen(f"http://{address}/page",
+                                                       data=mrn.encode('utf-8'))
                             if r.status == 200:
                                 # Successful paging, break out of the retry loop
                                 break
                         except urllib.error.URLError as e:
                             print(f"Paging failed on attempt {attempt + 1}: {e}")
                         if attempt < max_retries - 1:
-                            # Wait before retrying, unless this was the last attempt
+                            # Wait before retrying, unless it's the last attempt
                             time.sleep(retry_delay)
                         else:
                             # Final attempt failed
@@ -626,14 +634,19 @@ def processor(address: str, model, db_path: str = 'state/my_database.db', max_re
         print(f"An error occurred: {e}")
 
 
-def message_receiver(address: tuple[str, int], max_retries: int = 900, base_delay: float = 1.0, max_delay: float = 30.0) -> None:
-    """Receives HL7 messages over a socket, decodes, and queues them for processing.
+def message_receiver(address: tuple[str, int], max_retries: int = 1100,
+                     base_delay: float = 1.0, max_delay: float = 30.0) -> None:
+    """Receives HL7 messages over a socket, decodes, and queues them for
+    processing.
     
     Args:
-        address (tuple[str, int]): Hostname and port number for the socket connection.
+        address (tuple[str, int]): Hostname and port number for the socket
+                                   connection.
         max_retries (int): Maximum number of reconnection attempts.
-        base_delay (float): Initial delay between reconnection attempts in seconds.
-        max_delay (float): Maximum delay between reconnection attempts in seconds.
+        base_delay (float): Initial delay between reconnection attempts
+                            in seconds.
+        max_delay (float): Maximum delay between reconnection attempts
+                           in seconds.
     """
     global message, send_ack
     attempt_count = 0
@@ -645,7 +658,7 @@ def message_receiver(address: tuple[str, int], max_retries: int = 900, base_dela
                 print("Attempting to connect...")
                 s.connect(address)
                 print("Connected!")
-                attempt_count = 0  # Reset attempt count after successful connection
+                attempt_count = 0  # Reset attempt_count
                 delay = base_delay
                 
                 while not stop_event.is_set():
@@ -671,7 +684,7 @@ def message_receiver(address: tuple[str, int], max_retries: int = 900, base_dela
         except Exception as e:
             print(f"An error occurred: {e}")
             time.sleep(delay)
-            delay = min(delay * 2, max_delay)  # Exponential backoff with a maximum
+            delay = min(delay * 2, max_delay)  # Exponential backoff with a max
             attempt_count += 1
             print(f"Attempting to reconnect, attempt {attempt_count}.")
 
@@ -723,15 +736,15 @@ def main() -> None:
     t1 = None
     t2 = None
 
+    warnings.filterwarnings("ignore")
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--pathname", default="hospital-history/history.csv")
+    parser.add_argument("--db_path", default="state/my_database.db")
+    parser.add_argument("--metrics_path", default="state/counter_state.json")
+    flags = parser.parse_args()
+
     try:
-        warnings.filterwarnings("ignore")
-
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--pathname", default="hospital-history/history.csv")
-        parser.add_argument("--db_path", default="state/my_database.db")
-        parser.add_argument("--metrics_path", default="state/counter_state.json")
-        flags = parser.parse_args()
-
         if 'MLLP_ADDRESS' in os.environ:
             mllp_address = os.environ['MLLP_ADDRESS']
             hostname, port_str = mllp_address.split(':')
