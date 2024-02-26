@@ -3,3 +3,4 @@ venv/
 swemls_venv
 .idea
 my_database.db*
+*.json
