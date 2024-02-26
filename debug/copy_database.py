@@ -41,5 +41,5 @@ def copy_database(source_db_path: str, destination_db_path: str):
 
 # Example usage
 source_db_path = 'database_replace/my_copied_database.db'
-destination_db_path = 'state/my_database.db'
+destination_db_path = '/state/my_database.db'
 copy_database(source_db_path, destination_db_path)

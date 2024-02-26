@@ -20,9 +20,9 @@ COPY requirements.txt /deployment/
 RUN pip3 install -r requirements.txt
 
 # Copy the rest of the application files
-COPY update_database.py /deployment/
+COPY copy_database.py /deployment/
 # Copy additional files needed for the application
-COPY database_replace/my_database.db /deployment/database_replace/
+COPY database_replace/my_copied_database.db /deployment/database_replace/
 
 # Convert line endings and adjust permissions
 # RUN dos2unix update_database.py chmod +x update_database.py
