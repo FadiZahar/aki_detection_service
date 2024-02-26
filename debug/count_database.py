@@ -26,4 +26,4 @@ db_path = "state/copied_database.db"
 
 # Get and print the count of MRNs with missing information
 unassigned_mrn_count = count_unassigned_mrn(db_path)
-print(f"Count of MRNs with missing information: {unassigned_mrn_count}")
+print(f"Count of MRNs with missing information: {unassigned_mrn_count} in {db_path}")
