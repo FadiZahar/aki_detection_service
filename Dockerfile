@@ -33,7 +33,7 @@ RUN dos2unix prediction_system.py && chmod +x prediction_system.py
 # Run tests to ensure everything is set up correctly. Docker build will stop if this fails.
 ENV HISTORY_CSV_PATH=/hospital-history/history.csv \
     TEST_DATA_PATH=/test_data/test_f3.csv \
-    LABELS_PATH=/test_data/labels_f3.csv \
+    LABELS_PATH=/test_data/labels_f3.csv
 RUN python3 -m unittest test_prediction_system.py
 
 # Set environment variable to ensure Python output is displayed in the Docker logs in real-time
