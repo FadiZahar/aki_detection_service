@@ -29,12 +29,12 @@ COPY hospital-history/history.csv /hospital-history/
 RUN dos2unix prediction_system.py && chmod +x prediction_system.py
 
 # Run tests to ensure everything is set up correctly. Docker build will stop if this fails.
-RUN python3 test_prediction_system.py --pathname=/hospital-history/history.csv
+RUN python3 test_prediction_system.py
 
 # Set environment variable to ensure Python output is displayed in the Docker logs in real-time
 ENV PYTHONUNBUFFERED=1
 
 # Command to run the prediction system. Ensure this matches your application's needs.
-CMD ["python3", "prediction_system.py", "--pathname=/hospital-history/history.csv", "--db_path=/state/my_database.db"]
+CMD ["python3", "prediction_system.py", "--pathname=/hospital-history/history.csv", "--db_path=/state/my_database.db", "--metrics_path=/state/counter_state.json"]
 
 

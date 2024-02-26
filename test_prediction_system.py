@@ -401,7 +401,7 @@ class TestPreloadHistoryToSQLite(unittest.TestCase):
 
         # Connect to the temporary file database and preload data.
         cls.conn = sqlite3.connect(cls.db_path)
-        preload_history_to_sqlite(cls.db_path, flags.pathname)
+        preload_history_to_sqlite(cls.db_path, "/hospital-history/history.csv") # temporarily hardcoding the path for docker
 
     @classmethod
     def tearDownClass(cls):

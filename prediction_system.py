@@ -646,7 +646,8 @@ def message_receiver(address: tuple[str, int], max_retries: int = 900, base_dela
                 s.connect(address)
                 print("Connected!")
                 attempt_count = 0  # Reset attempt count after successful connection
-
+                delay = base_delay
+                
                 while not stop_event.is_set():
                     buffer = s.recv(1024)
                     if len(buffer) == 0:
