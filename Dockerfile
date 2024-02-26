@@ -24,13 +24,14 @@ COPY prediction_system.py trained_model.pkl test_prediction_system.py /simulator
 # Copy additional files needed for the application
 COPY messages.mllp /data/
 COPY hospital-history/history.csv /hospital-history/
+COPY test_data/test_f3.csv /test_data/
+COPY test_data/labels_f3.csv /test_data/
 
 # Convert line endings and adjust permissions
 RUN dos2unix prediction_system.py && chmod +x prediction_system.py
 
 # Run tests to ensure everything is set up correctly. Docker build will stop if this fails.
-ENV HISTORY_CSV_PATH=/hospital-history/history.csv
-RUN python3 test_prediction_system.py
+RUN python3 -m unittest test_prediction_system.py
 
 # Set environment variable to ensure Python output is displayed in the Docker logs in real-time
 ENV PYTHONUNBUFFERED=1

@@ -30,12 +30,19 @@ spec:
       - name: aki-detection
         image: imperialswemlsspring2024.azurecr.io/coursework5-devesa
         command: ["python3"] 
-        args: ["prediction_system.py", "--pathname=/hospital-history/history.csv", "--db_path=/state/my_database.db", "--metrics_path=/state/counter_state.json"]
+        args: ["prediction_system.py", "--pathname=/hospital-history/history.csv",
+               "--db_path=/state/my_database.db", "--metrics_path=/state/counter_state.json"]
         env:
         - name: MLLP_ADDRESS
           value: devesa-simulator.coursework5:8440 # which one we are connecting to 
         - name: PAGER_ADDRESS
           value: devesa-simulator.coursework5:8441
+        - name: TEST_DATA_PATH
+          value: "/test_data/test_f3.csv"
+        - name: LABELS_PATH
+          value: "/test_data/labels_f3.csv"
+        - name: HISTORY_CSV_PATH
+          value: "/hospital-history/history.csv"
         ports:
         - name: http
           containerPort: 8000

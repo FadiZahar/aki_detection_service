@@ -579,7 +579,7 @@ class AKIPredictor:
 
 
 def processor(address: str, model, db_path: str = 'state/my_database.db',
-              max_retries: int = 10, retry_delay: float = 2.0) -> None:
+              max_retries: int = 15, retry_delay: float = 1.0) -> None:
     """Processes messages, updates database or makes predictions, and sends
     notifications with retry logic for paging failures.
 

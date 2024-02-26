@@ -5,6 +5,8 @@ import os
 import pickle
 import tempfile
 import warnings
+import statistics
+from sklearn.metrics import fbeta_score
 from prediction_system import *
 
 
@@ -25,7 +27,6 @@ class TestAKIPredictor(unittest.TestCase):
         cls.db_file, cls.db_path = tempfile.mkstemp(suffix='.db')
         cls.conn = sqlite3.connect(cls.db_path)
         cls.cursor = cls.conn.cursor()
-        print(f"Using temporary database at {cls.db_path}")
         warnings.filterwarnings("ignore", category=UserWarning,
                                 module="sklearn.*")
 
@@ -489,7 +490,6 @@ class TestPreloadHistoryToSQLite(unittest.TestCase):
     def setUpClass(cls):
         # Create a temporary file to use as the database.
         cls.db_file, cls.db_path = tempfile.mkstemp(suffix='.db')
-        print(f"Using temporary database at {cls.db_path}")
 
         # Connect to the temporary file database and preload data.
         cls.conn = sqlite3.connect(cls.db_path)
@@ -556,6 +556,110 @@ class TestPreloadHistoryToSQLite(unittest.TestCase):
                 except ValueError:
                     self.fail(f"Test result {test_result} for MRN {mrn}, "
                               f"test_{idx} cannot be converted to float.")
+
+    def test_database_persistence_across_reconnections(self):
+        db_path = self.db_path
+
+        # Insert a new record
+        def insert_record(conn):
+            insert_query = """INSERT INTO patient_history (mrn, age, sex, 
+                              test_1, test_2, test_3, test_4, test_5) 
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?)"""
+            test_record = ("1223334444",
+                           40, 1, 100.0, 100.0, 100.0, 100.0, 100.0)
+            conn.execute(insert_query, test_record)
+            conn.commit()
+
+        # Check the record exists
+        def check_record_exists(conn):
+            select_query = "SELECT * FROM patient_history WHERE mrn = ?"
+            cursor = conn.cursor()
+            cursor.execute(select_query, ("1223334444",))
+            return cursor.fetchone()
+
+        # Insert record in a fresh connection
+        conn1 = sqlite3.connect(db_path)
+        insert_record(conn1)
+        conn1.close()  # Close the connection after inserting
+
+        # Reopen the connection to check for persistence
+        conn2 = sqlite3.connect(db_path)
+        fetched_record = check_record_exists(conn2)
+        self.assertIsNotNone(fetched_record, "The record should persist after "
+                                             "reconnecting to the database.")
+        conn2.close()  # Close the connection after checking
+
+        # Clean up by removing the test record in a new connection
+        conn3 = sqlite3.connect(db_path)
+        conn3.execute("DELETE FROM patient_history WHERE mrn = ?",
+                      ("1223334444",))
+        conn3.commit()
+        conn3.close()
+
+
+class TestModelF3Score(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Load the model
+        with open("trained_model.pkl", "rb") as file:
+            cls.model = pickle.load(file)
+
+        # Environment variables for test data and labels paths
+        test_data_path = os.getenv("TEST_DATA_PATH",
+                                   "test_data/test_f3.csv")
+        labels_path = os.getenv("LABELS_PATH",
+                                "test_data/labels_f3.csv")
+
+        # Load and preprocess test data and labels
+        cls.X_test, cls.y_test = \
+            cls.load_and_preprocess_test_data(test_data_path, labels_path)
+
+    @staticmethod
+    def load_and_preprocess_test_data(test_data_path, labels_path):
+        # Process the test data
+        with open(test_data_path, 'r') as file:
+            csv_reader = csv.reader(file)
+            next(csv_reader)  # Skip the header row
+
+            X_test = []
+            for row in csv_reader:
+                cleaned_row = [value for value in row if value != '']
+                age = int(cleaned_row[0])
+                sex = 0 if cleaned_row[1].lower() == 'm' else 1
+                test_results = list(map(float, cleaned_row[3::2]))
+                test_results = test_results[::-1]
+
+                # If there are fewer than 5 test results, pad with the mean
+                while len(test_results) < 5:
+                    average_result = statistics.mean(test_results) \
+                        if test_results else 0
+                    test_results += [average_result] * (5 - len(test_results))
+
+                test_results = test_results[:5]
+
+                X_test.append([age, sex] + test_results)
+
+        # Process the labels
+        with open(labels_path, 'r') as file:
+            csv_reader = csv.reader(file)
+            next(csv_reader)  # Skip the header row
+            y_test = [row for row in csv_reader]
+
+        # Convert labels to binary (0 or 1)
+        y_test = [0 if label[0].lower() == 'n' else 1 for label in y_test]
+
+        return X_test, y_test
+
+    def test_f3_score(self):
+        # Make predictions
+        y_pred = self.model.predict(self.X_test)
+
+        # Calculate the F3 score
+        f3_score = fbeta_score(self.y_test, y_pred, beta=3)
+
+        # Verify F3 score meets a min. threshold of 70% (better than NHS algo.)
+        self.assertGreaterEqual(f3_score, 0.7, f"F3 score is below the 70% "
+                                               f"threshold: {f3_score}")
 
 
 if __name__ == '__main__':
