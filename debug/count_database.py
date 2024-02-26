@@ -22,7 +22,7 @@ def count_unassigned_mrn(db_path: str = 'state/copied_database.db'):
         return unassigned_mrn_count
 
 # Define the database path
-db_path = "state/copied_database.db"
+db_path = "state/my_database.db"
 
 # Get and print the count of MRNs with missing information
 unassigned_mrn_count = count_unassigned_mrn(db_path)

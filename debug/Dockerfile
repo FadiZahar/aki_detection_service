@@ -22,13 +22,12 @@ RUN pip3 install -r requirements.txt
 # Copy the rest of the application files
 COPY update_database.py /deployment/
 # Copy additional files needed for the application
-COPY state/my_database.db /deployment/state/
-COPY data/recovery-data/messages.txt /deployment/data/recovery-data/
+COPY database_replace/my_database.db /deployment/database_replace/
 
 # Convert line endings and adjust permissions
 # RUN dos2unix update_database.py chmod +x update_database.py
 
 # Command to run the prediction system. Ensure this matches your application's needs.
-CMD ["python3", "update_database.py"]
+CMD ["python3", "copy_database.py"]
 
 
