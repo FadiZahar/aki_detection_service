@@ -7,7 +7,7 @@ import tempfile
 import warnings
 import statistics
 from sklearn.metrics import fbeta_score
-from src.prediction_system import *
+from prediction_system import *
 
 
 class TestAKIPredictor(unittest.TestCase):
