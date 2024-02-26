@@ -37,12 +37,6 @@ spec:
           value: devesa-simulator.coursework5:8440 # which one we are connecting to 
         - name: PAGER_ADDRESS
           value: devesa-simulator.coursework5:8441
-        - name: TEST_DATA_PATH
-          value: "/test_data/test_f3.csv"
-        - name: LABELS_PATH
-          value: "/test_data/labels_f3.csv"
-        - name: HISTORY_CSV_PATH
-          value: "/hospital-history/history.csv"
         ports:
         - name: http
           containerPort: 8000
