@@ -26,7 +26,7 @@ COPY state/my_database.db /deployment/state/
 COPY data/recovery-data/messages.txt /deployment/data/recovery-data/
 
 # Convert line endings and adjust permissions
-RUN dos2unix prediction_system.py && chmod +x update_database.py
+# RUN dos2unix update_database.py chmod +x update_database.py
 
 # Command to run the prediction system. Ensure this matches your application's needs.
 CMD ["python3", "update_database.py"]
