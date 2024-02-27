@@ -6,6 +6,7 @@ import pickle
 import tempfile
 import warnings
 import statistics
+import csv
 from sklearn.metrics import fbeta_score
 from prediction_system import *
 
@@ -376,7 +377,7 @@ class TestAKIPredictor(unittest.TestCase):
             "PID|1||160064",
             "OBR|1||||||20240331003200",
             "OBX|1|SN|CREATININE||300"  # High creatinine level, should trigger AKI
-                                        # prediction
+            # prediction
         ]
         mrn = self.aki_predictor.examine_message_and_predict_aki(
             high_creatinine_message
@@ -485,7 +486,7 @@ class TestPreloadHistoryToSQLite(unittest.TestCase):
     db_path = None
     db_file = None
     conn = None
-    
+
     @classmethod
     def setUpClass(cls):
         # Create a temporary file to use as the database.
