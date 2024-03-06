@@ -18,14 +18,13 @@ from prometheus_client import start_http_server, Gauge
 import json
 
 
-#SIGTERM handling
+# SIGTERM handling
 def sigterm_handler(signum, frame):
     print("SIGTERM received, signaling threads to stop...")
     stop_event.set()
 
 
 signal.signal(signal.SIGTERM, sigterm_handler)
-
 
 # Configure logging.
 logging.basicConfig(
@@ -57,41 +56,107 @@ model = None
 lock = threading.Lock()
 
 
+# ========================================
+# === PROMETHEUS METRICS SETUP - START ===
+# ========================================
+
 def initialise_or_load_counters(save_path: str = 'state/counter_state.json'):
     # Initialise gauges with no values
-    global MESSAGES_RECEIVED, MESSAGES_PROCESSED, BLOOD_TEST_RESULTS_RECEIVED, \
-        POSITIVE_AKI_PREDICTIONS
-    global UNSUCCESSFUL_PAGER_REQUESTS, MLLP_SOCKET_RECONNECTIONS, \
+    global MESSAGES_RECEIVED, MESSAGES_PROCESSED, MESSAGES_ACKNOWLEDGED, \
+        TOTAL_BLOOD_TEST_RESULTS_RECEIVED, NORMAL_BLOOD_TEST_RESULTS_RECEIVED, \
+        AKI_BLOOD_TEST_RESULTS_RECEIVED, POSITIVE_AKI_PREDICTIONS
+    global UNSUCCESSFUL_PAGER_REQUESTS, MLLP_SOCKET_CONNECTIONS, \
         POSITIVE_PREDICTION_RATE
-    global BLOOD_TEST_RESULT_MEAN, BLOOD_TEST_RESULT_STDDEV
+    global TOTAL_BLOOD_TEST_RESULT_MEAN, TOTAL_BLOOD_TEST_RESULT_STDDEV, \
+        NORMAL_BLOOD_TEST_RESULT_MEAN, NORMAL_BLOOD_TEST_RESULT_STDDEV, \
+        AKI_BLOOD_TEST_RESULT_MEAN, AKI_BLOOD_TEST_RESULT_STDDEV
+    global NON_CREATININE_LIMS_MESSAGES_RECEIVED, \
+        INVALID_CREATININE_LIMS_MESSAGES_RECEIVED, NEW_PATIENTS, \
+        LIMS_RECEIVED_BEFORE_PAS, PENDING_PREDICTIONS, LIMS_MESSAGES_PROCESSED, \
+        PAS_MESSAGES_PROCESSED, INVALID_MRN_RECEIVED, INVALID_DOB_RECEIVED, \
+        INVALID_SEX_RECEIVED, NON_RELEVANT_MESSAGES_PROCESSED
 
     MESSAGES_RECEIVED = \
         Gauge('messages_received',
               'Number of messages received')
+    MESSAGES_ACKNOWLEDGED = \
+        Gauge('messages_acknowledged',
+              'Number of messages acknowledged')
     MESSAGES_PROCESSED = \
         Gauge('messages_processed',
               'Number of messages processed')
-    BLOOD_TEST_RESULTS_RECEIVED = \
-        Gauge('blood_test_results_received',
-              'Number of blood test results received')
+    INVALID_MRN_RECEIVED = \
+        Gauge('invalid_mrn_received',
+              'Number of invalid MRN received')
+    LIMS_MESSAGES_PROCESSED = \
+        Gauge('lims_messages_processed',
+              'Total number of LIMS messages processed')
+    PAS_MESSAGES_PROCESSED = \
+        Gauge('pas_messages_processed',
+              'Total number of PAS messages processed')
+    NON_RELEVANT_MESSAGES_PROCESSED = \
+        Gauge('non_relevant_messages_processed',
+              'Total number of non-relevant messages processed')
+    NEW_PATIENTS = \
+        Gauge('new_patients',
+              'Number of new patients')
+    LIMS_RECEIVED_BEFORE_PAS = \
+        Gauge('lims_received_before_pas',
+              'Number of LIMS messages received before PAS messages')
+    PENDING_PREDICTIONS = \
+        Gauge('pending_predictions',
+              'Number of pending predictions')
+    NON_CREATININE_LIMS_MESSAGES_RECEIVED = \
+        Gauge('non_creatinine_lims_messages_received',
+              'Number of non-creatinine LIMS messages received')
+    INVALID_CREATININE_LIMS_MESSAGES_RECEIVED = \
+        Gauge('invalid_creatinine_lims_messages_received',
+              'Number of invalid creatinine LIMS messages received')
+    INVALID_DOB_RECEIVED = \
+        Gauge('invalid_dob_received',
+              'Number of invalid DOB received')
+    INVALID_SEX_RECEIVED = \
+        Gauge('invalid_sex_received',
+              'Number of invalid sex information received')
+    TOTAL_BLOOD_TEST_RESULTS_RECEIVED = \
+        Gauge('total_blood_test_results_received',
+              'Total number of blood test results received')
+    TOTAL_BLOOD_TEST_RESULT_MEAN = \
+        Gauge('total_blood_test_result_mean',
+              'Mean of all blood test results')
+    TOTAL_BLOOD_TEST_RESULT_STDDEV = \
+        Gauge('total_blood_test_result_stddev',
+              'Standard deviation of all blood test results')
+    NORMAL_BLOOD_TEST_RESULTS_RECEIVED = \
+        Gauge('normal_blood_test_results_received',
+              'Number of norma blood test results received')
+    NORMAL_BLOOD_TEST_RESULT_MEAN = \
+        Gauge('normal_blood_test_result_mean',
+              'Mean of normal blood test results')
+    NORMAL_BLOOD_TEST_RESULT_STDDEV = \
+        Gauge('normal_blood_test_result_stddev',
+              'Standard deviation of normal blood test results')
+    AKI_BLOOD_TEST_RESULTS_RECEIVED = \
+        Gauge('aki_blood_test_results_received',
+              'Number of AKI blood test results received')
+    AKI_BLOOD_TEST_RESULT_MEAN = \
+        Gauge('aki_blood_test_result_mean',
+              'Mean of AKI blood test results')
+    AKI_BLOOD_TEST_RESULT_STDDEV = \
+        Gauge('aki_blood_test_result_stddev',
+              'Standard deviation of AKI blood test results')
     POSITIVE_AKI_PREDICTIONS = \
         Gauge('positive_aki_predictions',
               'Number of positive AKI predictions')
-    UNSUCCESSFUL_PAGER_REQUESTS = \
-        Gauge('unsuccessful_pager_requests',
-              'Number of unsuccessful pager HTTP requests')
-    MLLP_SOCKET_RECONNECTIONS = \
-        Gauge('mllp_socket_reconnections',
-              'Number of reconnections to the MLLP socket')
     POSITIVE_PREDICTION_RATE = \
         Gauge('positive_prediction_rate',
               'Rate of positive AKI predictions')
-    BLOOD_TEST_RESULT_MEAN = \
-        Gauge('blood_test_result_mean',
-              'Mean of blood test results')
-    BLOOD_TEST_RESULT_STDDEV = \
-        Gauge('blood_test_result_stddev',
-              'Standard deviation of blood test results')
+    UNSUCCESSFUL_PAGER_REQUESTS = \
+        Gauge('unsuccessful_pager_requests',
+              'Number of unsuccessful pager HTTP requests')
+    MLLP_SOCKET_CONNECTIONS = \
+        Gauge('mllp_socket_connections',
+              'Number of connections to the MLLP socket')
 
     try:  # Load saved counter states
         with open(save_path, 'r') as f:
@@ -101,20 +166,56 @@ def initialise_or_load_counters(save_path: str = 'state/counter_state.json'):
 
         MESSAGES_RECEIVED.set(
             counter_state.get('messages_received', 0))
+        MESSAGES_ACKNOWLEDGED.set(
+            counter_state.get('messages_acknowledged', 0))
         MESSAGES_PROCESSED.set(
             counter_state.get('messages_processed', 0))
-        BLOOD_TEST_RESULTS_RECEIVED.set(
-            counter_state.get('blood_test_results_received', 0))
+        NON_CREATININE_LIMS_MESSAGES_RECEIVED.set(
+            counter_state.get('non_creatinine_lims_messages_received', 0))
+        INVALID_CREATININE_LIMS_MESSAGES_RECEIVED.set(
+            counter_state.get('invalid_creatinine_lims_messages_received', 0))
+        NEW_PATIENTS.set(
+            counter_state.get('new_patients', 0))
+        LIMS_RECEIVED_BEFORE_PAS.set(
+            counter_state.get('lims_received_before_pas', 0))
+        PENDING_PREDICTIONS.set(
+            counter_state.get('pending_predictions', 0))
+        LIMS_MESSAGES_PROCESSED.set(
+            counter_state.get('lims_messages_processed', 0))
+        PAS_MESSAGES_PROCESSED.set(
+            counter_state.get('pas_messages_processed', 0))
+        NON_RELEVANT_MESSAGES_PROCESSED.set(
+            counter_state.get('non_relevant_messages_processed', 0))
+        INVALID_MRN_RECEIVED.set(
+            counter_state.get('invalid_mrn_received', 0))
+        INVALID_DOB_RECEIVED.set(
+            counter_state.get('invalid_dob_received', 0))
+        INVALID_SEX_RECEIVED.set(
+            counter_state.get('invalid_sex_received', 0))
+        TOTAL_BLOOD_TEST_RESULTS_RECEIVED.set(
+            counter_state.get('total_blood_test_results_received', 0))
+        TOTAL_BLOOD_TEST_RESULT_MEAN.set(
+            counter_state.get('total_blood_test_result_mean', 0))
+        TOTAL_BLOOD_TEST_RESULT_STDDEV.set(
+            counter_state.get('total_blood_test_result_stddev', 0))
+        NORMAL_BLOOD_TEST_RESULTS_RECEIVED.set(
+            counter_state.get('normal_blood_test_results_received', 0))
+        NORMAL_BLOOD_TEST_RESULT_MEAN.set(
+            counter_state.get('normal_blood_test_result_mean', 0))
+        NORMAL_BLOOD_TEST_RESULT_STDDEV.set(
+            counter_state.get('normal_blood_test_result_stddev', 0))
+        AKI_BLOOD_TEST_RESULTS_RECEIVED.set(
+            counter_state.get('aki_blood_test_results_received', 0))
+        AKI_BLOOD_TEST_RESULT_MEAN.set(
+            counter_state.get('aki_blood_test_result_mean', 0))
+        AKI_BLOOD_TEST_RESULT_STDDEV.set(
+            counter_state.get('aki_blood_test_result_stddev', 0))
         POSITIVE_AKI_PREDICTIONS.set(
             counter_state.get('positive_aki_predictions', 0))
         UNSUCCESSFUL_PAGER_REQUESTS.set(
             counter_state.get('unsuccessful_pager_requests', 0))
-        MLLP_SOCKET_RECONNECTIONS.set(
-            counter_state.get('mllp_socket_reconnections', 0))
-        BLOOD_TEST_RESULT_MEAN.set(
-            counter_state.get('blood_test_result_mean', 0))
-        BLOOD_TEST_RESULT_STDDEV.set(
-            counter_state.get('blood_test_result_stddev', 0))
+        MLLP_SOCKET_CONNECTIONS.set(
+            counter_state.get('mllp_socket_connections', 0))
 
         # Calculate and set positive prediction rate based on the loaded values
         if MESSAGES_PROCESSED._value.get() > 0:  # Avoid division by zero
@@ -128,32 +229,70 @@ def initialise_or_load_counters(save_path: str = 'state/counter_state.json'):
         print("No counter state file found, initialising counters at zero.")
 
 
-def update_blood_test_result_mean(new_result):
-    old_mean = BLOOD_TEST_RESULT_MEAN._value.get()
-    number_of_results = BLOOD_TEST_RESULTS_RECEIVED._value.get()
-    new_mean = (old_mean * (number_of_results - 1) + new_result) \
+def update_total_blood_test_result_mean(new_result):
+    old_mean = TOTAL_BLOOD_TEST_RESULT_MEAN._value.get()
+    number_of_results = TOTAL_BLOOD_TEST_RESULTS_RECEIVED._value.get()
+    new_mean = ((old_mean * (number_of_results - 1)) + new_result) \
                / number_of_results
-    BLOOD_TEST_RESULT_MEAN.set(new_mean)
+    TOTAL_BLOOD_TEST_RESULT_MEAN.set(new_mean)
 
 
-def update_blood_test_result_stddev(new_result):
-    old_mean = BLOOD_TEST_RESULT_MEAN._value.get()
-    old_stddev = BLOOD_TEST_RESULT_STDDEV._value.get()
-    number_of_results = BLOOD_TEST_RESULTS_RECEIVED._value.get()
-    new_mean = (old_mean * (number_of_results - 1) + new_result) \
+def update_total_blood_test_result_stddev(new_result):
+    old_mean = TOTAL_BLOOD_TEST_RESULT_MEAN._value.get()
+    old_stddev = TOTAL_BLOOD_TEST_RESULT_STDDEV._value.get()
+    number_of_results = TOTAL_BLOOD_TEST_RESULTS_RECEIVED._value.get()
+    new_mean = ((old_mean * (number_of_results - 1)) + new_result) \
                / number_of_results
-    new_stddev = np.sqrt((old_stddev ** 2 * (number_of_results - 1) +
+    new_stddev = np.sqrt(((old_stddev ** 2 * (number_of_results - 1)) +
                           (new_result - new_mean) ** 2) / number_of_results)
-    BLOOD_TEST_RESULT_STDDEV.set(new_stddev)
+    TOTAL_BLOOD_TEST_RESULT_STDDEV.set(new_stddev)
+
+
+def update_normal_blood_test_result_mean(new_result):
+    old_mean = NORMAL_BLOOD_TEST_RESULT_MEAN._value.get()
+    number_of_results = NORMAL_BLOOD_TEST_RESULTS_RECEIVED._value.get()
+    new_mean = ((old_mean * (number_of_results - 1)) + new_result) \
+               / number_of_results
+    NORMAL_BLOOD_TEST_RESULT_MEAN.set(new_mean)
+
+
+def update_normal_blood_test_result_stddev(new_result):
+    old_mean = NORMAL_BLOOD_TEST_RESULT_MEAN._value.get()
+    old_stddev = NORMAL_BLOOD_TEST_RESULT_STDDEV._value.get()
+    number_of_results = NORMAL_BLOOD_TEST_RESULTS_RECEIVED._value.get()
+    new_mean = ((old_mean * (number_of_results - 1)) + new_result) \
+               / number_of_results
+    new_stddev = np.sqrt(((old_stddev ** 2 * (number_of_results - 1)) +
+                          (new_result - new_mean) ** 2) / number_of_results)
+    NORMAL_BLOOD_TEST_RESULT_STDDEV.set(new_stddev)
+
+
+def update_aki_blood_test_result_mean(new_result):
+    old_mean = AKI_BLOOD_TEST_RESULT_MEAN._value.get()
+    number_of_results = AKI_BLOOD_TEST_RESULTS_RECEIVED._value.get()
+    new_mean = ((old_mean * (number_of_results - 1)) + new_result) \
+               / number_of_results
+    AKI_BLOOD_TEST_RESULT_MEAN.set(new_mean)
+
+
+def update_aki_blood_test_result_stddev(new_result):
+    old_mean = AKI_BLOOD_TEST_RESULT_MEAN._value.get()
+    old_stddev = AKI_BLOOD_TEST_RESULT_STDDEV._value.get()
+    number_of_results = AKI_BLOOD_TEST_RESULTS_RECEIVED._value.get()
+    new_mean = ((old_mean * (number_of_results - 1)) + new_result) \
+               / number_of_results
+    new_stddev = np.sqrt(((old_stddev ** 2 * (number_of_results - 1)) +
+                          (new_result - new_mean) ** 2) / number_of_results)
+    AKI_BLOOD_TEST_RESULT_STDDEV.set(new_stddev)
 
 
 # Global gauge for positive prediction rate
 def update_positive_prediction_rate():
-    global BLOOD_TEST_RESULTS_RECEIVED, POSITIVE_AKI_PREDICTIONS, \
+    global TOTAL_BLOOD_TEST_RESULTS_RECEIVED, POSITIVE_AKI_PREDICTIONS, \
         POSITIVE_PREDICTION_RATE
     current_rate = POSITIVE_AKI_PREDICTIONS._value.get() \
-                   / BLOOD_TEST_RESULTS_RECEIVED._value.get() \
-        if BLOOD_TEST_RESULTS_RECEIVED._value.get() > 0 else 0
+                   / TOTAL_BLOOD_TEST_RESULTS_RECEIVED._value.get() \
+        if TOTAL_BLOOD_TEST_RESULTS_RECEIVED._value.get() > 0 else 0
     POSITIVE_PREDICTION_RATE.set(current_rate)
 
 
@@ -162,20 +301,69 @@ def save_counters(save_path: str = 'state/counter_state.json'):
     """Saves the current state of all Prometheus gauges to a JSON file.
     """
     counter_state = {
-        'messages_received': MESSAGES_RECEIVED._value.get(),
-        'messages_processed': MESSAGES_PROCESSED._value.get(),
-        'blood_test_results_received': BLOOD_TEST_RESULTS_RECEIVED._value.get(),
-        'positive_aki_predictions': POSITIVE_AKI_PREDICTIONS._value.get(),
-        'unsuccessful_pager_requests': UNSUCCESSFUL_PAGER_REQUESTS._value.get(),
-        'mllp_socket_reconnections': MLLP_SOCKET_RECONNECTIONS._value.get(),
-        'blood_test_result_mean': BLOOD_TEST_RESULT_MEAN._value.get(),
-        'blood_test_result_stddev': BLOOD_TEST_RESULT_STDDEV._value.get()
+        'messages_received':
+            MESSAGES_RECEIVED._value.get(),
+        'messages_acknowledged':
+            MESSAGES_ACKNOWLEDGED._value.get(),
+        'messages_processed':
+            MESSAGES_PROCESSED._value.get(),
+        'non_creatinine_lims_messages_received':
+            NON_CREATININE_LIMS_MESSAGES_RECEIVED._value.get(),
+        'invalid_creatinine_lims_messages_received':
+            INVALID_CREATININE_LIMS_MESSAGES_RECEIVED._value.get(),
+        'new_patients':
+            NEW_PATIENTS._value.get(),
+        'lims_received_before_pas':
+            LIMS_RECEIVED_BEFORE_PAS._value.get(),
+        'pending_predictions':
+            PENDING_PREDICTIONS._value.get(),
+        'lims_messages_processed':
+            LIMS_MESSAGES_PROCESSED._value.get(),
+        'pas_messages_processed':
+            PAS_MESSAGES_PROCESSED._value.get(),
+        'non_relevant_messages_processed':
+            NON_RELEVANT_MESSAGES_PROCESSED._value.get(),
+        'invalid_mrn_received':
+            INVALID_MRN_RECEIVED._value.get(),
+        'invalid_sex_received':
+            INVALID_SEX_RECEIVED._value.get(),
+        'invalid_dob_received':
+            INVALID_DOB_RECEIVED._value.get(),
+        'total_blood_test_results_received':
+            TOTAL_BLOOD_TEST_RESULTS_RECEIVED._value.get(),
+        'total_blood_test_result_mean':
+            TOTAL_BLOOD_TEST_RESULT_MEAN._value.get(),
+        'total_blood_test_result_stddev':
+            TOTAL_BLOOD_TEST_RESULT_STDDEV._value.get(),
+        'normal_blood_test_results_received':
+            NORMAL_BLOOD_TEST_RESULTS_RECEIVED._value.get(),
+        'normal_blood_test_result_mean':
+            NORMAL_BLOOD_TEST_RESULT_MEAN._value.get(),
+        'normal_blood_test_result_stddev':
+            NORMAL_BLOOD_TEST_RESULT_STDDEV._value.get(),
+        'aki_blood_test_results_received':
+            AKI_BLOOD_TEST_RESULTS_RECEIVED._value.get(),
+        'aki_blood_test_result_mean':
+            AKI_BLOOD_TEST_RESULT_MEAN._value.get(),
+        'aki_blood_test_result_stddev':
+            AKI_BLOOD_TEST_RESULT_STDDEV._value.get(),
+        'positive_aki_predictions':
+            POSITIVE_AKI_PREDICTIONS._value.get(),
+        'unsuccessful_pager_requests':
+            UNSUCCESSFUL_PAGER_REQUESTS._value.get(),
+        'mllp_socket_connections':
+            MLLP_SOCKET_CONNECTIONS._value.get()
     }
 
     with open(save_path, 'w') as f:
         json.dump(counter_state, f)
 
     print("Counter states saved to 'state/counter_state.json'.")
+
+
+# ======================================
+# === PROMETHEUS METRICS SETUP - END ===
+# ======================================
 
 
 def from_mllp(buffer: bytes) -> list[str]:
@@ -283,7 +471,7 @@ def preload_history_to_sqlite(db_path: str = 'state/my_database.db',
                         if test_results else 0
                     test_results += [average_result] * (required_number_of_tests
                                                         - len(test_results))
-                
+
                 test_results = test_results[:required_number_of_tests]
 
                 # Insert data into the database.
@@ -360,26 +548,33 @@ class AKIPredictor:
         """
         test_type = message[3].split("|")[3]
         if test_type != "CREATININE":
+            if self.metrics_count_flag:
+                NON_CREATININE_LIMS_MESSAGES_RECEIVED.inc()
             logging.error(f"{msg_identifier}\n>> Invalid test type: "
                           f"{test_type}")
             return None
         creatinine_result_str = message[3].split("|")[5]
         if not creatinine_result_str.replace('.', '', 1).isdigit():
+            if self.metrics_count_flag:
+                INVALID_CREATININE_LIMS_MESSAGES_RECEIVED.inc()
             logging.error(f"{msg_identifier}\n>> Invalid test result format: "
                           f"{creatinine_result_str}")
             return None
 
         creatinine_result = float(creatinine_result_str)
         if self.metrics_count_flag:
-            BLOOD_TEST_RESULTS_RECEIVED.inc()
+            TOTAL_BLOOD_TEST_RESULTS_RECEIVED.inc()
+            update_total_blood_test_result_mean(creatinine_result)
+            update_total_blood_test_result_stddev(creatinine_result)
             update_positive_prediction_rate()
-            update_blood_test_result_mean(creatinine_result)
-            update_blood_test_result_stddev(creatinine_result)
 
         # Check if MRN exists in the database
         cursor.execute("SELECT 1 FROM patient_history WHERE mrn = ?", (mrn,))
         exists = cursor.fetchone()
         if not exists:  # occurs if LIMS received before PAS for a specific MRN
+            if self.metrics_count_flag:
+                NEW_PATIENTS.inc()
+                LIMS_RECEIVED_BEFORE_PAS.inc()
             cursor.execute("INSERT INTO patient_history (mrn) VALUES (?)",
                            (mrn,))
 
@@ -405,6 +600,8 @@ class AKIPredictor:
                             creatinine_result, mrn))
 
         self.pending_predictions.add(mrn)
+        if self.metrics_count_flag:
+            PENDING_PREDICTIONS.inc()
         return self.attempt_aki_prediction(cursor, mrn, msg_identifier)
 
     def process_pas_message(self, cursor, mrn: str, message: list[str],
@@ -430,17 +627,27 @@ class AKIPredictor:
         """
         date_of_birth = message[1].split("|")[7]
         if not self._is_valid_dob(date_of_birth):
+            if self.metrics_count_flag:
+                INVALID_DOB_RECEIVED.inc()
             logging.error(f"{msg_identifier}\n>> Invalid DOB format: "
                           f"{date_of_birth}")
             return None
         sex_str = message[1].split("|")[8]
         if sex_str not in ["F", "M"]:
+            if self.metrics_count_flag:
+                INVALID_SEX_RECEIVED.inc()
             logging.error(f"{msg_identifier}\n>> Invalid sex value: "
                           f"{sex_str}")
             return None
 
         age = self._calculate_age(date_of_birth)
         sex = 1 if sex_str == "F" else 0
+
+        # Check if MRN exists in the database
+        cursor.execute("SELECT 1 FROM patient_history WHERE mrn = ?", (mrn,))
+        exists = cursor.fetchone()
+        if not exists and self.metrics_count_flag:
+            NEW_PATIENTS.inc()
 
         # Update or insert the demographic information
         cursor.execute("""INSERT INTO patient_history (mrn, age, sex) 
@@ -507,19 +714,29 @@ class AKIPredictor:
         cursor.execute("SELECT age, sex, test_1, test_2, test_3, test_4, test_5 "
                        "FROM patient_history WHERE mrn=?", (mrn,))
         patient_data = cursor.fetchone()
+        last_result = patient_data[2]
 
         # Ensure age and sex are not None (occurs if LIMS received before PAS)
         if patient_data and not any(val is None for val in patient_data[:2]):
             features = np.array(patient_data).reshape(1, -1)
             aki = self.model.predict(features)
             self.pending_predictions.remove(mrn)
+            if self.metrics_count_flag:
+                PENDING_PREDICTIONS.dec()
             if aki:
                 logging.info(f"{msg_identifier}\n>> AKI predicted for "
                              f"MRN: {mrn}")
                 if self.metrics_count_flag:
                     POSITIVE_AKI_PREDICTIONS.inc()
+                    AKI_BLOOD_TEST_RESULTS_RECEIVED.inc()
+                    update_aki_blood_test_result_mean(last_result)
+                    update_aki_blood_test_result_stddev(last_result)
                     update_positive_prediction_rate()
                 return mrn
+            if self.metrics_count_flag:
+                NORMAL_BLOOD_TEST_RESULTS_RECEIVED.inc()
+                update_normal_blood_test_result_mean(last_result)
+                update_normal_blood_test_result_stddev(last_result)
         return None
 
     def examine_message_and_predict_aki(self, message: list[str]) -> str | None:
@@ -542,24 +759,35 @@ class AKIPredictor:
             with sqlite3.connect(self.db_path) as conn:
                 c = conn.cursor()
 
+                if self.metrics_count_flag:
+                    MESSAGES_PROCESSED.inc()
+
                 message_type = message[0].split("|")[8]
                 mrn = message[1].split("|")[3]
                 timestamp = message[0].split("|")[6]
                 msg_identifier = f"\n[MRN: {mrn} " \
-                                f"\nmessage_type <{message_type}>" \
-                                f"\ntimestamp: {timestamp}]"
+                                 f"\nmessage_type <{message_type}>" \
+                                 f"\ntimestamp: {timestamp}]"
                 if not mrn.isdigit():
+                    if self.metrics_count_flag:
+                        INVALID_MRN_RECEIVED.inc()
                     logging.error(f"{msg_identifier}\n>> "
                                   f"Invalid MRN format: {mrn}")
                     return None
 
                 if message_type == "ORU^R01":
+                    if self.metrics_count_flag:
+                        LIMS_MESSAGES_PROCESSED.inc()
                     result = self.process_lims_message(c, mrn, message,
-                                                    msg_identifier)
+                                                       msg_identifier)
                 elif message_type == "ADT^A01":
+                    if self.metrics_count_flag:
+                        PAS_MESSAGES_PROCESSED.inc()
                     result = self.process_pas_message(c, mrn, message,
-                                                    msg_identifier)
+                                                      msg_identifier)
                 else:
+                    if self.metrics_count_flag:
+                        NON_RELEVANT_MESSAGES_PROCESSED.inc()
                     result = None
 
                 conn.commit()
@@ -602,7 +830,6 @@ def processor(address: str, model, db_path: str = 'state/my_database.db',
             with lock:
                 if len(messages) > 0:
                     message = messages.pop(0)
-                    MESSAGES_RECEIVED.inc()
                     run_code = True
 
             if run_code:
@@ -627,7 +854,7 @@ def processor(address: str, model, db_path: str = 'state/my_database.db',
                 # When the process ends, inform message_receiver to acknowledge.
                 with lock:
                     send_ack = True
-                    MESSAGES_PROCESSED.inc()
+                    # MESSAGES_PROCESSED.inc()
                 run_code = False
 
     except Exception as e:
@@ -638,7 +865,7 @@ def message_receiver(address: tuple[str, int], max_retries: int = 1100,
                      base_delay: float = 1.0, max_delay: float = 30.0) -> None:
     """Receives HL7 messages over a socket, decodes, and queues them for
     processing.
-    
+
     Args:
         address (tuple[str, int]): Hostname and port number for the socket
                                    connection.
@@ -658,13 +885,13 @@ def message_receiver(address: tuple[str, int], max_retries: int = 1100,
                 print("Attempting to connect...")
                 s.connect(address)
                 print("Connected!")
+                MLLP_SOCKET_CONNECTIONS.inc()
                 attempt_count = 0  # Reset attempt_count
                 delay = base_delay
-                
+
                 while not stop_event.is_set():
                     buffer = s.recv(1024)
                     if len(buffer) == 0:
-                        MLLP_SOCKET_RECONNECTIONS.inc()
                         continue
                     message = from_mllp(buffer)
                     with lock:
@@ -679,7 +906,7 @@ def message_receiver(address: tuple[str, int], max_retries: int = 1100,
                                 send_ack = False
                     ack = to_mllp(ACK)
                     s.sendall(ack)
-                    MESSAGES_PROCESSED.inc()
+                    MESSAGES_ACKNOWLEDGED.inc()
 
         except Exception as e:
             print(f"An error occurred: {e}")
