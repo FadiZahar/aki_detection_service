@@ -6,11 +6,10 @@ This document provides detailed instructions on how to set up, run, and test the
 
 - [Project Overview](#project-overview)
 - [Key Features](#key-features)
-- [System Architecture](#system-architecture)
 - [Getting Started](#getting-started)
   - [Prerequisites](#prerequisites)
   - [Installation](#installation)
-- [Running the Service](#running-the-service)
+- [Running the Simulation](#running-the-simulation)
   - [Unit Testing](#unit-testing)
   - [Simulation](#simulation)
   - [Monitoring Metrics](#monitoring-metrics)
