@@ -2,12 +2,21 @@ import unittest
 from unittest.mock import patch
 import sqlite3
 import os
+import sys
 import pickle
 import tempfile
 import warnings
 import statistics
+import csv
 from sklearn.metrics import fbeta_score
-from prediction_system import *
+
+try:
+    # Try importing as if running in Docker (without src prefix)
+    from prediction_system import *
+except ModuleNotFoundError:
+    # Fallback to local import with src prefix
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
+    from prediction_system import *
 
 
 class TestAKIPredictor(unittest.TestCase):
@@ -20,7 +29,7 @@ class TestAKIPredictor(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # Load the actual model from a pickle file
-        with open("trained_model.pkl", "rb") as file:
+        with open("models/trained_model.pkl", "rb") as file:
             cls.model = pickle.load(file)
 
         # Create a temporary file to use as the database
@@ -376,7 +385,7 @@ class TestAKIPredictor(unittest.TestCase):
             "PID|1||160064",
             "OBR|1||||||20240331003200",
             "OBX|1|SN|CREATININE||300"  # High creatinine level, should trigger AKI
-                                        # prediction
+            # prediction
         ]
         mrn = self.aki_predictor.examine_message_and_predict_aki(
             high_creatinine_message
@@ -485,7 +494,7 @@ class TestPreloadHistoryToSQLite(unittest.TestCase):
     db_path = None
     db_file = None
     conn = None
-    
+
     @classmethod
     def setUpClass(cls):
         # Create a temporary file to use as the database.
@@ -494,7 +503,7 @@ class TestPreloadHistoryToSQLite(unittest.TestCase):
         # Connect to the temporary file database and preload data.
         cls.conn = sqlite3.connect(cls.db_path)
         history_csv_path = os.getenv("HISTORY_CSV_PATH",
-                                     "hospital-history/history.csv")
+                                     "data/hospital-history/history.csv")
         preload_history_to_sqlite(cls.db_path, history_csv_path)
 
     @classmethod
@@ -601,14 +610,14 @@ class TestModelF3Score(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # Load the model
-        with open("trained_model.pkl", "rb") as file:
+        with open("models/trained_model.pkl", "rb") as file:
             cls.model = pickle.load(file)
 
         # Environment variables for test data and labels paths
         test_data_path = os.getenv("TEST_DATA_PATH",
-                                   "test_data/test_f3.csv")
+                                   "data/test_data/test_f3.csv")
         labels_path = os.getenv("LABELS_PATH",
-                                "test_data/labels_f3.csv")
+                                "data/test_data/labels_f3.csv")
 
         # Load and preprocess test data and labels
         cls.X_test, cls.y_test = \
