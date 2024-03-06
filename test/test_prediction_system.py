@@ -8,7 +8,13 @@ import warnings
 import statistics
 import csv
 from sklearn.metrics import fbeta_score
-from src.prediction_system import *
+
+try:
+    # Try importing as if running in Docker (without src prefix)
+    from prediction_system import *
+except ImportError:
+    # Fallback to local import with src prefix
+    from src.prediction_system import *
 
 
 class TestAKIPredictor(unittest.TestCase):
