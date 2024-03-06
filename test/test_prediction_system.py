@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 import sqlite3
 import os
+import sys
 import pickle
 import tempfile
 import warnings
@@ -12,9 +13,10 @@ from sklearn.metrics import fbeta_score
 try:
     # Try importing as if running in Docker (without src prefix)
     from prediction_system import *
-except ImportError:
+except ModuleNotFoundError:
     # Fallback to local import with src prefix
-    from src.prediction_system import *
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
+    from prediction_system import *
 
 
 class TestAKIPredictor(unittest.TestCase):
