@@ -80,6 +80,10 @@ To run the simulation, two terminal should be opened concurrently:
 
 Access Prometheus metrics at `http://localhost:8000/` during simulation.
 
+### Stopping the Simulation
+
+To stop the simulation, you can simply use the keyboard shortcut `Control + C` (`^C`) in each terminal where the simulator and prediction system are running. This sends an interrupt signal to the process, allowing it to terminate gracefully.
+
 
 ## Project Structure
 
