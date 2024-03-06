@@ -98,7 +98,7 @@ Access Prometheus metrics at `http://localhost:8000/` during simulation.
 - `requirements.txt` - Python dependencies.
 
 
-## Build With
+## Built With
 - *Docker*: Containerisation.
 - *Kubernetes*: Orchestration.
 - *Prometheus*: Monitoring.
